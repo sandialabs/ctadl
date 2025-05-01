@@ -1,0 +1,25 @@
+var g1;
+
+def A(a) {
+  g1 = a;
+}
+
+def C(a) {
+  A(a);
+}
+
+def B() {
+  return g1;
+}
+
+def D() {
+  tmp = B();
+  return tmp;
+}
+
+def Main() {
+  s = source(Data);
+  C(s);
+  x = D();
+  sink(x, Data);
+}

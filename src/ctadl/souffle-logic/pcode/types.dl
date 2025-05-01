@@ -1,0 +1,14 @@
+#pragma once
+
+// instruction is an occurrence of a pcode operation
+.type PCodeInstruction <: symbol
+.type PCodeVarnode <: symbol
+.type PCodeHighFunc <: symbol
+.type PCodeHighPrototype <: symbol
+.type PCodeHighVar <: symbol
+.type PCodeHighSymbol <: symbol
+.type PCodeType <: symbol
+.type PCodeBlockBasic <: symbol
+.type PCodeAddress <: number
+.type PCodeParameterDefinition <: symbol
+.type PCodeGenericCallingConvention <: symbol

@@ -1,0 +1,20 @@
+{
+  "model_generators": [
+    {
+      "find": "instructions",
+      "where": [
+        {
+          "constraint": "uses_field",
+          "names": ["mAdapter", "pid"]
+        }
+      ],
+      "model": {
+        "taint": [
+          {
+            "kind": "Uses_mAdapter"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "model_generators": [
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "name": "i",
+          "parent": "Landroid/util/Log;"
+        }
+      ],
+      "model": {
+        "sinks": [
+          {
+            "kind": "Persistence",
+            "port": "Argument(*)",
+            "all_fields": true
+          }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "name": "getDeviceId",
+          "parent": "Landroid/telephony/TelephonyManager;"
+        }
+      ],
+      "model": {
+        "sources": [
+          {
+            "kind": "Telephony",
+            "port": "Return"
+          }
+        ]
+      }
+    }
+  ]
+}

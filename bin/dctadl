@@ -1,0 +1,163 @@
+#!/usr/bin/env python3
+
+import dataclasses
+import logging
+import argparse
+import sys
+import os
+import json
+import subprocess
+import textwrap
+from io import StringIO
+
+from dataclasses import dataclass
+from pathlib import Path
+from functools import reduce
+from operator import add
+
+
+default_config = {
+    "docker": {
+        "command": "docker",
+        "args": [
+            "run",
+            "--rm",
+            "-it",
+            "--volume",
+            "/path/to/artifacts:/artifacts",
+            "--volume",
+            "/path/to/imports:/imports",
+            "ctadl:latest",
+        ],
+        "ctadl": {"args": []},
+    }
+}
+default_configpath = (
+    Path(
+        os.environ.get("APPDATA")
+        or os.environ.get("XDG_CONFIG_HOME")
+        or (Path(os.environ["HOME"]) / ".config")
+    )
+    / "ctadl"
+    / "dctadl-config.json"
+)
+
+
+description = f"""
+Wraps ctadl-in-docker in a ctadl-like CLI.
+Running:
+
+    $ dctadl [dctadl-options] [--] <ctadl-arguments>
+
+dctadl reads a configuration file that instructs it how to run ctadl-in-docker,
+passing ctadl-arguments. This gives users who want to use the docker container
+a similar CLI experience to a native ctadl install.
+
+Configure:
+
+    $ dctadl --init # creates config file
+    
+Customize the config file to change your volume mounts, image name, etc.
+"""
+
+
+@dataclass
+class DockerCLI:
+    command: str
+    docker_args: list[str] = dataclasses.field(default_factory=list)
+    ctadl_args: list[str] = dataclasses.field(default_factory=list)
+
+    def run(self, restargs: list[str], dry_run=False):
+        cmd = [self.command] + self.docker_args + self.ctadl_args + restargs
+        cmdstr = " ".join(f"'{a}'" for a in cmd)
+        logging.info("docker command: %s", cmdstr)
+        if not dry_run:
+            subprocess.check_call(cmd)
+        else:
+            print("--dry-run given, command:")
+            print(cmdstr)
+
+
+def make_argparser():
+    parser = argparse.ArgumentParser(
+        description=description, formatter_class=argparse.RawTextHelpFormatter
+    )
+    parser.add_argument(
+        "--log-level",
+        metavar="<level>",
+        type=str.upper,
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        default="WARNING",
+        help="Logger level: %(choices)s (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--config",
+        default=default_configpath,
+        type=Path,
+        help="Path to config file (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=False,
+        help="Just print the docker command to run, don't run it",
+    )
+    parser.add_argument(
+        "--init",
+        action="store_true",
+        default=False,
+        help="Creates default config at the file passed to --config",
+    )
+    return parser
+
+
+def main(argv):
+    parser = make_argparser()
+    args, restargs = parser.parse_known_args()
+    logging.basicConfig(level=getattr(logging, args.log_level))
+    logging.debug("args: %s", args)
+    # Removes argparse stopper if present
+    if restargs and restargs[0] == "--":
+        restargs = restargs[1:]
+    logging.debug("restargs: %s", restargs)
+
+    os.makedirs(args.config.parent, exist_ok=True)
+    configfile = args.config.resolve()
+
+    if args.init:
+        if configfile.exists():
+            print(f"error: refusing to overwrite config file at '{configfile}")
+            exit(1)
+        with open(configfile, "w") as file:
+            print(json.dumps(default_config, indent=2), file=file)
+        print(f"default config written to '{configfile}'")
+        exit(0)
+
+    try:
+        logging.debug("parsing %s", configfile)
+        with open(configfile) as file:
+            conf = json.loads(file.read())
+    except FileNotFoundError:
+        logging.warning(
+            f"config file not found at '{configfile}', using default config"
+        )
+        logging.warning(f"use --init to initialize config file")
+        conf = default_config
+    logging.debug("config: %s", conf)
+
+    DockerCLI(
+        command=conf["docker"]["command"],
+        docker_args=conf["docker"].get("args", []),
+        ctadl_args=conf["docker"]["ctadl"].get("args", []),
+    ).run(restargs, dry_run=args.dry_run)
+
+
+if __name__ == "__main__":
+    try:
+        main(sys.argv)
+    except BrokenPipeError:
+        # Python flushes standard streams on exit; redirect remaining output
+        # to devnull to avoid another BrokenPipeError at shutdown
+        devnull = os.open(os.devnull, os.O_WRONLY)
+        os.dup2(devnull, sys.stdout.fileno())
+        sys.exit(1)  # Python exits with error code 1 on EPIPE

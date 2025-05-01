@@ -1,0 +1,572 @@
+// author: tjloffr
+
+// This file is meant to extend dataflows through the Android Intents library. 
+
+.decl CallToSimpleName(stmt: CInsn, simple_name: symbol) inline
+CallToSimpleName(stmt, simple_name) :-
+    Method_SimpleName(func, simple_name),
+    MethodInvocation_Method(stmt, func).
+
+
+
+// moves startActivity(intent) to i = getIntent() in another function
+// VirtualAssign(insn, v_to, ap_to, v_from, ap_from, "intent") :-
+CInsn_ModelAssign(insn, v_to, ap_to, v_from, ap_from, "intent") :-
+    OutputIntentFlows(v_from, ap_from, v_to, ap_to, insn).
+
+// We turn arbitrary key strings into numbers with ord() to avoid confusion with '.' characters
+#define MakeIntentKeyField(dtype, key_str) cat("[intent-", dType, "].", to_string(ord(key_str)))
+
+// intent.putExtra(key, data) becomes
+// intent[special-datatype].key = data
+isComputedAccessPath(newField),
+CInsn_ModelAssign(insn, intentVar, fullPath, fromVar, fromPath, "intent") :-
+    IntentPutExtra(insn, key, _, fromVar, fromPath, intentVar, intentPath, dType),
+    VarReferencesString(key, keyStr),
+    newField = MakeIntentKeyField(dType, keyStr),
+    fullPath = cat(intentPath, newField).
+
+// data = intent.getStringExtra(key) becomes
+// data = intent[special-datatype].key 
+isComputedAccessPath(newField),
+CInsn_ModelAssign(insn, toVar, toPath, intentVar, fullPath, "intent") :-
+    IntentGetExtra(insn, key, _, toVar, toPath, intentVar, intentPath, dType),
+    VarReferencesString(key, keyStr),
+    newField = MakeIntentKeyField(dType, keyStr),
+    fullPath = cat(intentPath, newField).
+  
+.decl OutputIntentFlows(fromVar:symbol, fromPath:symbol, toVar:symbol, toPath:symbol, recvStmt:symbol)
+//.output OutputIntentFlows
+OutputIntentFlows(fromVar, fromPath, toVar, toPath, recvStmt) :-
+    IntentSenderFlow(actionStr, commType, fromVar, fromPath),
+    IntentReceiverFlow(actionStr, commType, toVar, toPath, recvStmt).
+
+// This is the special "send back" flow for results going back to where they came from...
+// This is a more complex edge case of the above relation
+// We verify that a startActivity() call happens from A to B, and that a result happens from B to A
+// This is untested
+OutputIntentFlows(fromVar, fromPath, toVar, toPath, recvStmt) :-
+    // In A, Same as IntentSenderFlow, but with no data necessary
+    IntentAction(_, intentSend, intentSendPath, actionStr),
+    IntentSend(stm, intentSend, intentSendPath, "activity"),
+    StatementInClass(stm, sendClass),
+    // In B, Same as IntentReceiverFlow, but with no data necessary
+    IntentRecv(stm2, _, _, "activity"),
+    StatementInClass(stm2, recvClass),
+    ActivityHasIntentFilter(recvClass, actionStr, _),
+    // In B, Now track the result
+    IntentPutExtra(_, key, _, fromVar, fromPath, intentSend2, intentSend2Path, dType),
+    IntentSend(stm3, intentSend2, intentSend2Path, "result"),
+    VarReferencesString(key, keyStr),
+    StatementInClass(stm3, recvClass),
+    // In A, Now track the result
+    IntentRecv(stm4, intentRecv2, intentRecv2Path, "result"),
+    IntentGetExtra(recvStmt, key2, _, toVar, toPath, intentRecv2, intentRecv2Path, dType),
+    VarReferencesString(key2, keyStr), 
+    StatementInClass(stm4, sendClass).
+
+// (This occurs on 'Intent Sender' side)
+// A call defining an intent action,
+// A call storing data in an intent with a key,
+// A call sending an intent,
+// Where that data is tainted with a label,
+// And the intent objects are all the same
+.decl IntentSenderFlow(actionStr:symbol, commType:symbol, intentSend:symbol, intentPath:symbol)
+IntentSenderFlow(actionStr, commType, intentSend, intentPath) :-
+    //IntentAction(_, intentSend, action),    
+    //VarReferencesString(action, actionStr), 
+    track_intent.tracker.isReachable(intentSend, intentPath, actionStr),
+    //IntentPutExtra(_, key, _, fromVar, fromPath, intentSend, intentPath, dType), TODO
+    IntentSend(_, intentSend, intentPath, commType).
+    //VarReferencesString(key, keyStr).
+
+// (This occurs on the 'Intent Receiver' side)
+// A call receiving an intent,
+// A call fetching data from an intent,
+// Where the same key is used as above, plus the same data type,
+// And the intent objects are the same,
+// In a class with an intent filter that matches the intent action above
+.decl IntentReceiverFlow(actionStr:symbol, commType:symbol, intentRecv:symbol, intentPath:symbol, recvStmt:symbol)
+IntentReceiverFlow(actionStr, commType, intentRecv, intentPath, stm) :-
+    IntentRecv(stm, intentRecv, intentPath, commType),
+    //IntentGetExtra(stm, key, _, toVar, toPath, intentRecv, intentPath, dType), TODO
+    //VarReferencesString(key, keyStr), 
+    StatementInClass(stm, activityClass),
+    ActivityHasIntentFilter(xmlActivityClass, actionStr, _),
+    xmlActivityClass = activityClass.
+
+// stm is a call to a putExtra-style function, with key 'key' and value 'val/valPath'
+// dataType is the kind of Extra that is being stored
+.decl IntentPutExtra(stm:symbol, key:symbol, keyPath: symbol, val:symbol, valPath:symbol, intentVar:symbol, intentPath:symbol, dataType:symbol)
+IntentPutExtra(stm, key, keyPath, val, valPath, intentVar, intentPath, "string") :-
+    CallEdge(stm, "Landroid/content/Intent;.putExtra:(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,2, val, valPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentPutExtra(stm, key, keyPath, val, valPath, intentVar, intentPath, "int") :-
+    CallEdge(stm, "Landroid/content/Intent;.putExtra:(Ljava/lang/String;I)Landroid/content/Intent;", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,2, val, valPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentPutExtra(stm, key, keyPath, val, valPath, intentVar, intentPath, "boolean") :-
+    CallEdge(stm, "Landroid/content/Intent;.putExtra:(Ljava/lang/String;Z)Landroid/content/Intent;", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,2, val, valPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentPutExtra(stm, key, keyPath, val, valPath, intentVar, intentPath, "byte") :-
+    CallEdge(stm, "Landroid/content/Intent;.putExtra:(Ljava/lang/String;B)Landroid/content/Intent;", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,2, val, valPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentPutExtra(stm, key, keyPath, val, valPath, intentVar, intentPath, "char") :-
+    CallEdge(stm, "Landroid/content/Intent;.putExtra:(Ljava/lang/String;C)Landroid/content/Intent;", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,2, val, valPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentPutExtra(stm, key, keyPath, val, valPath, intentVar, intentPath, "short") :-
+    CallEdge(stm, "Landroid/content/Intent;.putExtra:(Ljava/lang/String;S)Landroid/content/Intent;", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,2, val, valPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentPutExtra(stm, key, keyPath, val, valPath, intentVar, intentPath, "long") :-
+    CallEdge(stm, "Landroid/content/Intent;.putExtra:(Ljava/lang/String;J)Landroid/content/Intent;", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,2, val, valPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentPutExtra(stm, key, keyPath, val, valPath, intentVar, intentPath, "float") :-
+    CallEdge(stm, "Landroid/content/Intent;.putExtra:(Ljava/lang/String;F)Landroid/content/Intent;", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,2, val, valPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentPutExtra(stm, key, keyPath, val, valPath, intentVar, intentPath, "double") :-
+    CallEdge(stm, "Landroid/content/Intent;.putExtra:(Ljava/lang/String;D)Landroid/content/Intent;", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,2, val, valPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentPutExtra(stm, key, keyPath, val, valPath, intentVar, intentPath, "string[]") :-
+    CallEdge(stm, "Landroid/content/Intent;.putExtra:(Ljava/lang/String;[Ljava/lang/String;)Landroid/content/Intent;", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,2, val, valPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentPutExtra(stm, key, keyPath, val, valPath, intentVar, intentPath, "int[]") :-
+    CallEdge(stm, "Landroid/content/Intent;.putExtra:(Ljava/lang/String;[I)Landroid/content/Intent;", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,2, val, valPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentPutExtra(stm, key, keyPath, val, valPath, intentVar, intentPath, "boolean[]") :-
+    CallEdge(stm, "Landroid/content/Intent;.putExtra:(Ljava/lang/String;[Z)Landroid/content/Intent;", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,2, val, valPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentPutExtra(stm, key, keyPath, val, valPath, intentVar, intentPath, "byte[]") :-
+    CallEdge(stm, "Landroid/content/Intent;.putExtra:(Ljava/lang/String;[B)Landroid/content/Intent;", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,2, val, valPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentPutExtra(stm, key, keyPath, val, valPath, intentVar, intentPath, "char[]") :-
+    CallEdge(stm, "Landroid/content/Intent;.putExtra:(Ljava/lang/String;[C)Landroid/content/Intent;", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,2, val, valPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentPutExtra(stm, key, keyPath, val, valPath, intentVar, intentPath, "short[]") :-
+    CallEdge(stm, "Landroid/content/Intent;.putExtra:(Ljava/lang/String;[S)Landroid/content/Intent;", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,2, val, valPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentPutExtra(stm, key, keyPath, val, valPath, intentVar, intentPath, "long[]") :-
+    CallEdge(stm, "Landroid/content/Intent;.putExtra:(Ljava/lang/String;[J)Landroid/content/Intent;", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,2, val, valPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentPutExtra(stm, key, keyPath, val, valPath, intentVar, intentPath, "float[]") :-
+    CallEdge(stm, "Landroid/content/Intent;.putExtra:(Ljava/lang/String;[F)Landroid/content/Intent;", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,2, val, valPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentPutExtra(stm, key, keyPath, val, valPath, intentVar, intentPath, "double[]") :-
+    CallEdge(stm, "Landroid/content/Intent;.putExtra:(Ljava/lang/String;[D)Landroid/content/Intent;", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,2, val, valPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentPutExtra(stm, key, keyPath, val, valPath, intentVar, intentPath, "Parcelable") :-
+    CallEdge(stm, "Landroid/content/Intent;.putExtra:(Ljava/lang/String;Landroid/os/Parcelable;)Landroid/content/Intent;", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,2, val, valPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentPutExtra(stm, key, keyPath, val, valPath, intentVar, intentPath, "Parcelable[]") :-
+    CallEdge(stm, "Landroid/content/Intent;.putExtra:(Ljava/lang/String;[Landroid/os/Parcelable;)Landroid/content/Intent;", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,2, val, valPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentPutExtra(stm, key, keyPath, val, valPath, intentVar, intentPath, "CharSequence") :-
+    CallEdge(stm, "Landroid/content/Intent;.putExtra:(Ljava/lang/String;Ljava/lang/CharSequence;)Landroid/content/Intent;", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,2, val, valPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentPutExtra(stm, key, keyPath, val, valPath, intentVar, intentPath, "CharSequence[]") :-
+    CallEdge(stm, "Landroid/content/Intent;.putExtra:(Ljava/lang/String;[Ljava/lang/CharSequence;)Landroid/content/Intent;", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,2, val, valPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentPutExtra(stm, key, keyPath, val, valPath, intentVar, intentPath, "Serializable") :-
+    CallEdge(stm, "Landroid/content/Intent;.putExtra:(Ljava/lang/String;Ljava/io/Serializable;)Landroid/content/Intent;", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,2, val, valPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentPutExtra(stm, key, keyPath, val, valPath, intentVar, intentPath, "Bundle") :-
+    CallEdge(stm, "Landroid/content/Intent;.putExtra:(Ljava/lang/String;Landroid/os/Bundle;)Landroid/content/Intent;", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,2, val, valPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentPutExtra(stm, key, keyPath, val, valPath, intentVar, intentPath, "IBinder") :-
+    CallEdge(stm, "Landroid/content/Intent;.putExtra:(Ljava/lang/String;Landroid/os/IBinder;)Landroid/content/Intent;", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,2, val, valPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+
+
+
+// stm is a call to a getExtra-style function, with key 'key' and return value 'ret/retPath'
+// dataType is the kind of Extra that is being fetched
+.decl IntentGetExtra(stm:symbol, key:symbol, keyPath:symbol, ret:symbol, retPath:symbol, intentVar:symbol, intentPath:symbol, dataType:symbol)
+IntentGetExtra(stm, key, keyPath, ret, retPath, intentVar, intentPath, "string") :-
+    CallEdge(stm, "Landroid/content/Intent;.getStringExtra:(Ljava/lang/String;)Ljava/lang/String;", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,-1, ret, retPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentGetExtra(stm, key, keyPath, ret, retPath, intentVar, intentPath, "int") :-
+    CallEdge(stm, "Landroid/content/Intent;.getIntExtra:(Ljava/lang/String;)I", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,-1, ret, retPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentGetExtra(stm, key, keyPath, ret, retPath, intentVar, intentPath, "boolean") :-
+    CallEdge(stm, "Landroid/content/Intent;.getBooleanExtra:(Ljava/lang/String;)Z", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,-1, ret, retPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentGetExtra(stm, key, keyPath, ret, retPath, intentVar, intentPath, "byte") :-
+    CallEdge(stm, "Landroid/content/Intent;.getByteExtra:(Ljava/lang/String;)B", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,-1, ret, retPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentGetExtra(stm, key, keyPath, ret, retPath, intentVar, intentPath, "char") :-
+    CallEdge(stm, "Landroid/content/Intent;.getCharExtra:(Ljava/lang/String;)C", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,-1, ret, retPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentGetExtra(stm, key, keyPath, ret, retPath, intentVar, intentPath, "short") :-
+    CallEdge(stm, "Landroid/content/Intent;.getShortExtra:(Ljava/lang/String;)S", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,-1, ret, retPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentGetExtra(stm, key, keyPath, ret, retPath, intentVar, intentPath, "long") :-
+    CallEdge(stm, "Landroid/content/Intent;.getLongExtra:(Ljava/lang/String;)J", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,-1, ret, retPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentGetExtra(stm, key, keyPath, ret, retPath, intentVar, intentPath, "float") :-
+    CallEdge(stm, "Landroid/content/Intent;.getFloatExtra:(Ljava/lang/String;)F", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,-1, ret, retPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentGetExtra(stm, key, keyPath, ret, retPath, intentVar, intentPath, "double") :-
+    CallEdge(stm, "Landroid/content/Intent;.getDoubleExtra:(Ljava/lang/String;)D", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,-1, ret, retPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentGetExtra(stm, key, keyPath, ret, retPath, intentVar, intentPath, "string[]") :-
+    CallEdge(stm, "Landroid/content/Intent;.getStringArrayExtra:(Ljava/lang/String;)[Ljava/lang/String;", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,-1, ret, retPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentGetExtra(stm, key, keyPath, ret, retPath, intentVar, intentPath, "int[]") :-
+    CallEdge(stm, "Landroid/content/Intent;.getIntArrayExtra:(Ljava/lang/String;)[I", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,-1, ret, retPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentGetExtra(stm, key, keyPath, ret, retPath, intentVar, intentPath, "boolean[]") :-
+    CallEdge(stm, "Landroid/content/Intent;.getBooleanArrayExtra:(Ljava/lang/String;)[Z", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,-1, ret, retPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentGetExtra(stm, key, keyPath, ret, retPath, intentVar, intentPath, "byte[]") :-
+    CallEdge(stm, "Landroid/content/Intent;.getByteArrayExtra:(Ljava/lang/String;)[B", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,-1, ret, retPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentGetExtra(stm, key, keyPath, ret, retPath, intentVar, intentPath, "char[]") :-
+    CallEdge(stm, "Landroid/content/Intent;.getCharArrayExtra:(Ljava/lang/String;)[C", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,-1, ret, retPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentGetExtra(stm, key, keyPath, ret, retPath, intentVar, intentPath, "short[]") :-
+    CallEdge(stm, "Landroid/content/Intent;.getShortArrayExtra:(Ljava/lang/String;)[S", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,-1, ret, retPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentGetExtra(stm, key, keyPath, ret, retPath, intentVar, intentPath, "long[]") :-
+    CallEdge(stm, "Landroid/content/Intent;.getLongArrayExtra:(Ljava/lang/String;)[J", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,-1, ret, retPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentGetExtra(stm, key, keyPath, ret, retPath, intentVar, intentPath, "float[]") :-
+    CallEdge(stm, "Landroid/content/Intent;.getFloatArrayExtra:(Ljava/lang/String;)[F", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,-1, ret, retPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentGetExtra(stm, key, keyPath, ret, retPath, intentVar, intentPath, "double[]") :-
+    CallEdge(stm, "Landroid/content/Intent;.getDoubleArrayExtra:(Ljava/lang/String;)[D", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,-1, ret, retPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentGetExtra(stm, key, keyPath, ret, retPath, intentVar, intentPath, "Parcelable") :-
+    CallEdge(stm, "Landroid/content/Intent;.getParcelableExtra:(Ljava/lang/String;)Landroid/os/Parcelable;", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,-1, ret, retPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentGetExtra(stm, key, keyPath, ret, retPath, intentVar, intentPath, "Parcelable[]") :-
+    CallEdge(stm, "Landroid/content/Intent;.getParcelableArrayExtra:(Ljava/lang/String;)[Landroid/os/Parcelable;", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,-1, ret, retPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentGetExtra(stm, key, keyPath, ret, retPath, intentVar, intentPath, "CharSequence") :-
+    CallEdge(stm, "Landroid/content/Intent;.getCharSequenceExtra:(Ljava/lang/String;)Ljava/lang/CharSequence;", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,-1, ret, retPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentGetExtra(stm, key, keyPath, ret, retPath, intentVar, intentPath, "CharSequence[]") :-
+    CallEdge(stm, "Landroid/content/Intent;.getCharSequenceArrayExtra:(Ljava/lang/String;)[Ljava/lang/CharSequence;", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,-1, ret, retPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentGetExtra(stm, key, keyPath, ret, retPath, intentVar, intentPath, "Serializable") :-
+    CallEdge(stm, "Landroid/content/Intent;.getSerializableExtra:(Ljava/lang/String;)Ljava/io/Serializable;", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,-1, ret, retPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentGetExtra(stm, key, keyPath, ret, retPath, intentVar, intentPath, "Bundle") :-
+    CallEdge(stm, "Landroid/content/Intent;.getBundleExtra:(Ljava/lang/String;)Landroid/os/Bundle;", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,-1, ret, retPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentGetExtra(stm, key, keyPath, ret, retPath, intentVar, intentPath, "IBinder") :-
+    CallEdge(stm, "Landroid/content/Intent;.getIBinderExtra:(Ljava/lang/String;)Landroid/os/IBinder;", ""),
+    CCall_ActualParam(stm,1, key, keyPath),
+    CCall_ActualParam(stm,-1, ret, retPath),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+
+// stm is a call that sets the intent action string, which we use to test against filters
+.decl IntentAction(stm:symbol, intentVar:symbol, intentPath:symbol, actionStr:symbol)
+IntentAction(stm, intentVar, intentPath, actionStr) :-
+    CallEdge(stm, "Landroid/content/Intent;.<init>:(Ljava/lang/String;)V", ""),
+    CCall_ActualParam(stm, 0, action, _),
+    VarReferencesString(action, actionStr),
+    CCall_ActualParam(stm, -1, intentVar, intentPath).
+IntentAction(stm, intentVar, intentPath, actionStr) :-
+    CallEdge(stm, "Landroid/content/Intent;.<init>:(Ljava/lang/String;Landroid/net/Uri;)V", ""),
+    CCall_ActualParam(stm, 0, action, _),
+    VarReferencesString(action, actionStr),
+    CCall_ActualParam(stm, -1, intentVar, intentPath).
+// We should do something with the context/class on this one, but not sure what to do; just using the action string for now
+IntentAction(stm, intentVar, intentPath, actionStr) :- 
+    CallEdge(stm, "Landroid/content/Intent;.<init>:(Ljava/lang/String;Landroid/net/Uri;Landroid/content/Context;Ljava/lang/Class;)V", ""),
+    CCall_ActualParam(stm, 0, action, _),
+    VarReferencesString(action, actionStr),
+    CCall_ActualParam(stm, -1, intentVar, intentPath).
+IntentAction(stm, intentVar, intentPath, actionStr) :-
+    CallEdge(stm, "Landroid/content/Intent;.setAction:(Ljava/lang/String;)Landroid/content/Intent;", ""),
+    CCall_ActualParam(stm,1, action, _),
+    VarReferencesString(action, actionStr),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+// These are explicit versions, that ask for a specific class or component to be given the result
+// I'm not really sure what context brings to this, or what exactly java.lang.Class is
+// Maybe we just match the class name on both sides?
+// This form is completely untested, probably not gonna work
+IntentAction(stm, intentVar, intentPath, action) :-
+    CallEdge(stm, "Landroid/content/Intent;.<init>:(Landroid/content/Context;Ljava/lang/Class;)V", ""),
+    CCall_ActualParam(stm, 1, classObj, _),
+    ClassObjectToClassName(classObj, action),
+    CCall_ActualParam(stm, -1, intentVar, intentPath).
+IntentAction(stm, intentVar, intentPath, actionStr) :-
+    CallEdge(stm, "Landroid/content/Intent;.setClassName:(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;", ""),
+    CCall_ActualParam(stm,2, action, _),
+    VarReferencesString(action, actionStr),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentAction(stm, intentVar, intentPath, action) :-
+    CallEdge(stm, "Landroid/content/Intent;.setClass:(Landroid/content/Context;Ljava/lang/Class;)Landroid/content/Intent;", ""),
+    CCall_ActualParam(stm,2, classObj, _),
+    ClassObjectToClassName(classObj, action),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+IntentAction(stm, intentVar, intentPath, action) :-
+    CallEdge(stm, "Landroid/content/Intent;.setComponent:(Landroid/content/ComponentName;)Landroid/content/Intent;", ""),
+    CCall_ActualParam(stm,1, classObj, _),
+    ClassObjectToClassName(classObj, action),
+    CCall_ActualParam(stm,0, intentVar, intentPath).
+
+// This is blank, since I have no idea how to do this yet
+.decl ClassObjectToClassName(classObj:symbol, className:symbol)
+
+// stm is a call that sends the intent to the receiver
+// commType is the type of the communication, e.g. "activity", "broadcast"
+// commType has to be matched on the other side with the right receiver communication mechanism
+.decl IntentSend(stm:symbol, intentVar:symbol, intentPath:symbol, commType:symbol)
+IntentSend(stm, intentVar, intentPath, "activity") :-
+    CallToSimpleName(stm, "startActivity"),
+    CCall_ActualParam(stm,1, intentVar, intentPath).
+IntentSend(stm, intentVar, intentPath, "activity") :-
+    CallToSimpleName(stm, "startActivity"),
+    CCall_ActualParam(stm,1, intentVar, intentPath).
+IntentSend(stm, intentVar, intentPath, "activity") :-
+    CallToSimpleName(stm, "startActivityForResult"),
+    CCall_ActualParam(stm,1, intentVar, intentPath).
+IntentSend(stm, intentVar, intentPath, "activity") :-
+    CallToSimpleName(stm, "startActivityForResult"),
+    CCall_ActualParam(stm,1, intentVar, intentPath).
+IntentSend(stm, intentVar, intentPath, "broadcast") :-
+    CallToSimpleName(stm, "sendBroadcast"),
+    CCall_ActualParam(stm,1, intentVar, intentPath).
+IntentSend(stm, intentVar, intentPath, "broadcast") :-
+    CallToSimpleName(stm, "sendOrderedBroadcast"),
+    CCall_ActualParam(stm,1, intentVar, intentPath).
+IntentSend(stm, intentVar, intentPath, "broadcast") :-
+    CallToSimpleName(stm, "sendBroadcast"),
+    CCall_ActualParam(stm,1, intentVar, intentPath).
+// This is for getting results back from an activity you create (which also uses intents)
+// This is untested, and I don't have a good way of limiting to just the activity which created us...
+//IntentSend(stm, intentVar, "result") :-
+//    CallToSimpleName(stm, "Landroid/app/Activity;.:(IL android/content/Intent;)Lvoid setResult(int,;"),
+//    CCall_ActualParam(stm,2, intentVar, intentPath).
+
+// stm is a call that fetches an intent from the sender
+// commType is the type of the communication, e.g. "activity", "broadcast"
+.decl IntentRecv(stm:symbol, intentVar:symbol, intentPath:symbol, commType:symbol)
+// As far as I can tell, there are not other forms of "getIntent()", this is the only game in town
+IntentRecv(stm, intentVar, intentPath, "activity") :-
+    // Making this more generic to handle call resolution problems...
+    CallEdge(stm, func, ""),
+    CFunction_Name(func, "getIntent"),
+    StatementReachableFromOnCreate(stm),
+    CCall_ActualParam(stm, -1, intentVar, intentPath).
+IntentRecv(stm, intentVar, intentPath, "broadcast") :-
+    IntCInsn_InFunction(stm, _, meth),
+    Method_SimpleName(meth, "onReceive"),
+    CInsn_Move(stm, intentVar, intentPath, formal, ""),
+    CFunction_FormalParam(meth, 1, formal).
+// This is for getting results back from an activity you create (which also uses intents)
+// This is untested, and I don't have a good way of limiting to just the activity which created us...
+IntentRecv(stm, intentVar, intentPath, "result") :-
+    IntCInsn_InFunction(stm, _, meth),
+    Method_SimpleName(meth, "onActivityResult"),
+    CInsn_Move(stm, intentVar, intentPath, formal, ""),
+    CFunction_FormalParam(meth, 2, formal).
+
+// Says that statement 'stm' is reachable starting at entry point 'func'
+// For now, I am assuming that relevant statements are actually just
+// in the function itself, but it may get more complex later
+.decl StatementReachableFromOnCreate(stm:symbol)
+StatementReachableFromOnCreate(stm) :-
+  IntCInsn_InFunction(stm, _, meth),
+  Method_SimpleName(meth, "onCreate").
+StatementReachableFromOnCreate(stm) :-
+  StatementReachableFromOnCreate(call_stm),
+  CallEdge(call_stm, func, ""),
+  IntCInsn_InFunction(stm, _, func).
+//.plan 1: (2, 1, 3)
+
+// Represents that var is a reference for string s.
+// This is mostly a placeholder in case we want to make checking for string
+// Equality more complex in the future, e.g. with string manipulation functions
+// Right now we are assuming var is a static string
+.decl VarReferencesString(var:symbol, s:symbol)
+VarReferencesString(var, s) :-
+    _VarIsConst(var, s).
+
+// This is needed to make a testcase work... hard in general to deal with string manipulations
+// Propagates const_string.substring(const_value) with a reference to the correct substring
+VarReferencesString(var, cut_s) :-
+    VarReferencesString(otherVar, s),
+    CCall_ActualParam(stm, 0, otherVar, _),
+    CCall_ActualParam(stm, 1, numArg, _),
+    _VarIsConst(numArg, constNumVal),
+    CallEdge(stm, func, ""),
+    CFunction_Name(func, "substring"),
+    CCall_ActualParam(stm, -1, var, _),
+    l = strlen(s) - to_number(constNumVal),
+    cut_s = substr(s, to_number(constNumVal), l).
+
+// This relates activity class names to intent filters: action and category, from the xml
+// I haven't seen why the category would matter, so we mostly just ignore it
+.decl ActivityHasIntentFilter(jvmName:symbol, actionStr:symbol, categoryStr:symbol)
+ActivityHasIntentFilter(jvmName, actionStr, categoryStr) :-
+  _ManifestNode(activityId, "activity"),
+  _ManifestNodeAttr(activityId, "android:name", nameStr),
+  _ManifestNodeChild(activityId, intentFilterId),
+  _ManifestNode(intentFilterId, "intent-filter"),
+  _ManifestNodeChild(intentFilterId, categoryId),
+  _ManifestNode(categoryId, "category"),
+  _ManifestNodeChild(intentFilterId, actionId),
+  _ManifestNode(actionId, "action"),
+  _ManifestNodeAttr(categoryId, "android:name", categoryStr),
+  _ManifestNodeAttr(actionId, "android:name", actionStr),
+  _ClassHasName(jvmName, nameStr).
+
+// This version is for IntentFilters declared programmatically using "new IntentFilter(str)" and "registerReceiver(...)"
+ActivityHasIntentFilter(nameStr, actionStr, "none") :-
+  CallToSimpleName(stm, "registerReceiver"),
+  CCall_ActualParam(stm,1, broadcastReceiver, _),
+  CCall_ActualParam(stm,2, intentFilter, _),
+  CCall_ActualParam(stm2, -1, intentFilter, _),
+  CallEdge(stm2, "Landroid/content/IntentFilter;.<init>:(Ljava/lang/String;)V", ""),
+  CCall_ActualParam(stm2, 0, actionVar, _),
+  VarReferencesString(actionVar, actionStr),
+  _VarHasType(broadcastReceiver, nameStr).
+.plan 1: (6, 5, 4, 1, 2, 3, 7, 8, 9)
+
+// We also include an activity's name itself as a psuedo-intent-filter, for explicit intents   
+ActivityHasIntentFilter(nameStr, nameStr, "none") :-
+  _ManifestNode(activityId, "activity"),
+  _ManifestNodeAttr(activityId, "android:name", nameStr).
+
+.decl StatementInClass(stm:symbol, className:symbol)
+StatementInClass(stm, className) :-
+  IntCInsn_InFunction(stm, _, meth),
+  Method_DeclaringType(meth, className).
+
+
+.comp Wrap {
+#define FS_VirtualAssignPlan
+#define FS_ReachableCallEdgePlan
+#define FS_CalledFormalPlan
+#define FS_ReachableReturnEdgePlan
+
+#define FS_IRPlan
+#define FS_VirtualAssignInline inline
+#include "graph/slice/bidi.dl"
+#undef FS_VirtualAssignInline
+
+
+.init tracker = SliceTaint
+tracker.input_.SliceForward().
+tracker.input_.SliceBackward() :- false.
+tracker.input_.StartVertex(var, varPath, action_str) :-
+    IntentAction(_, var, varPath, action_str).
+tracker.Vertex(v, p) :- Vertex(v, p).
+tracker.VirtualAssign(i, v1, p1, v2, p2, r, ctx) :-
+    VirtualAssign(i, v1, p1, v2, p2, r, ctx).
+}
+.init track_intent = Wrap
+
+
+// These are mostly for debugging help
+#ifdef ALL_OUTPUTS
+.output IntentSenderFlow(CTADL_OUTPUT_DB_IO)
+.output IntentReceiverFlow(CTADL_OUTPUT_DB_IO)
+.output VarReferencesString(CTADL_OUTPUT_DB_IO)
+.output StatementInClass(CTADL_OUTPUT_DB_IO)
+.output IntentAction(CTADL_OUTPUT_DB_IO)
+.output IntentPutExtra(CTADL_OUTPUT_DB_IO)
+.output IntentGetExtra(CTADL_OUTPUT_DB_IO)
+.output IntentSend(CTADL_OUTPUT_DB_IO)
+.output ActivityHasIntentFilter(CTADL_OUTPUT_DB_IO)
+.output IntentRecv(CTADL_OUTPUT_DB_IO)
+#endif

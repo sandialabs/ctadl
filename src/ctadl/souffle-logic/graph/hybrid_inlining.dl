@@ -1,0 +1,278 @@
+// ; ( cd taint-front && dune exec ./taint.exe compositional-ctx.tnt ) && ctadl index ./taint-front/facts -f
+#define LocallyReachable_CtxEdge(v1, p1, v2, p2, ctx) \
+    VirtualAssign(_, v1, p1, v2, p2, _, ctx), \
+    !CVar_isGlobal(v1), \
+    !CVar_isGlobal(v2), \
+    CVar_InFunction(v1, m), CVar_InFunction(v2, m)
+
+// Virtual call sites that "escape" a function are the focus here. These
+// are call sites where the actual parameter of "this" needed to resolve the
+// virtual call is supplied by callers. The "this" parameter of such calls
+// are recorded as Parthian vertices. The formals that reach Parthian vertices
+// are recorded as Parthian vertices also. Once some Parthian vars are
+// identified, the process may chain, because another caller may call a
+// function with Parthian summary, and the caller actual parameter becomes a
+// Parthian vertex.
+//
+// A Parthian vertex is either:
+// - (Base case) the "this" actual of a call site that is reached by a formal
+// - (Recursive case) the formal of f that reaches a local Parthian var in f
+// - (Recursive case) an actual that flows to a callee with a Parthian formal
+// As Parthian vertices are computed, we compute the edges of flow between them.
+// These are ParthianFlowEdges.
+//
+// A Parthian vertex may coincide with a virtual alloc. This means
+// an allocation (e.g., x = new Thing()) occurs that resolves a Parthian var. The
+// objects resolved on a Parthian var in a given context are ContextObj. We can
+// follow the flow of such objects across Parthian flow edges and keep track of
+// building a function call context; this is done with ContextEdge. ContextEdge
+// is built so that when we, finally, create contextual summaries and
+// assignments, we can pop the function call context as we work our way up the
+// stack.
+
+// We call them Parthian vertices because, from the virtual call site, we
+// "shoot back" up the stack to try to find objects that resolve the virtual
+// call, just like the Parthians of old.
+
+// This rule is the most important result of the whole hybrid inlining
+// analysis.
+// Resolves a call in ctx to funcref
+// HI figures out the Parthian resolvent object.
+// Frontends provide the resolvent function.
+CallEdge(stmt, funcref, ctx) :-
+    IndirectCallResolvent(ctx, stmt, obj),
+    IndirectCallResolventFunction(stmt, obj, funcref),
+    !CInsn_UnsuspiciousCall(stmt, _),
+    EnableHybridInlining(),
+    !DisableGlobalDataFlow().
+.plan 1: (2, 1, 3)
+
+// A resolve context locally reaches an indirect call site
+IndirectCallResolvent(ctx, stmt, obj) :-
+    ContextObj(v, p, obj, ctx),
+    CCall_ActualParam(stmt, n, v, p),
+    CCall_VirtualBase(stmt, n).
+
+//.decl ParthianActual(stmt: CInsn, n: number, v: CVar, p: CAccessPath)
+
+// flows to a virtual call
+//.decl ParthianSummary(func: CFunction, n: number, p: CAccessPath)
+
+// In a call flow edge, the src is an actual and the dst is a formal. These
+// edges are *only* between Parthian actuals and Parthian formals.
+.decl ParthianFlowEdge(
+    dst_func: CFunction, dst_var: CVar, dst_to: CAccessPath,
+    src_func: CFunction, src_var: CVar, src_path: CAccessPath,
+    ctx: symbol
+)
+
+// A Parthian var is a var which flows to a virtual call.
+// The var is either an actual or a formal.
+.decl ParthianVertex(var: CVar, path: CAccessPath, length: number)
+choice-domain (var, path)
+
+// Base case:
+// Virtual calls on a variable (formal or not)
+ParthianVertex(v, p, 0) :-
+    CCall_VirtualBase(s, base_index),
+    CCall_ActualParam(s, base_index, v, p),
+    EnableHybridInlining(),
+    !DisableGlobalDataFlow().
+
+// Recursive case:
+// Formals that reach Parthian variables are also Parthian
+ParthianVertex(param, p, n) :-
+    LocallyReachable(v2, p2, param, p, ""),
+    ParthianVertex(v2, p2, n),
+    EnableHybridInlining(),
+    !DisableGlobalDataFlow().
+#ifndef CTADL_CCLYZER_FRONTEND
+.plan 1: (2, 1, 3)
+#endif
+
+// Recursive case:
+// Calls to a function with a Parthian formal
+ParthianFlowEdge(callee, formal, formal_ap, caller, v, full_ap, ctx),
+ParthianVertex(v, full_ap, m_inlines) :-
+    ParthianVertex(formal, formal_ap, n_inlines),
+    CFunction_FormalParam(callee, n, formal),
+    CallEdge(stmt, callee, ctx),
+    CCall_ActualParam(stmt, n, v, actual_ap),
+    MatchComputedPrefix(full_ap, actual_ap, formal_ap),
+    IntCInsn_InFunction(stmt, _, caller),
+    (
+        EnableHybridInlining_KInliningSensitivity(),
+        HybridInlining_KInliningSize(k),
+        m_inlines = n_inlines+1,
+        m_inlines <= k
+    ;   !EnableHybridInlining_KInliningSensitivity(),
+        m_inlines = 0,
+        n_inlines=n_inlines
+    ).
+
+Vertex(v, p) :-
+    ParthianVertex(v, p, _),
+    EnableHybridInlining_AddParthiansToVertex().
+
+// Context resolves a vertex to an object
+.decl ContextObj(v: CVar, p: CAccessPath, obj: symbol, ctx: symbol)
+choice-domain (v, p, obj)
+
+
+// Object resolves var directly
+ContextObj(v, ap, obj, ctx) :-
+    ParthianVertex(v, ap, _),
+    VirtualAlloc(v, ap, obj, ""),
+    ctx = @NewCallString().
+.plan 1: (2, 1)
+
+// Object resolves var by local flow
+ContextObj(v2, p2, obj, ctx) :-
+    (VirtualAlloc(v, p, obj, ""), ctx = @NewCallString(); ContextObj(v, p, obj, ctx)),
+    LocallyReachable(v2, p2, v, p, ""),
+    ParthianVertex(v2, p2, _).
+#ifndef CTADL_CCLYZER_FRONTEND
+.plan 1: (2, 1, 3), 2: (3, 2, 1)
+#endif
+
+// Object follows a Parthian flow into another function (k-context-sensitive
+// version)
+ContextObj(formal, formal_ap, obj, g_ctx) :-
+    ContextObj(v, ap, obj, f_ctx),
+    ParthianFlowEdge(_, formal, formal_ap, f, v, ap, edge_ctx),
+    (   f_ctx = "", flow_ctx = edge_ctx
+    ;   1 = @CallStringUnder(edge_ctx, f_ctx), flow_ctx = f_ctx),
+    // cycle check
+    !contains(f, flow_ctx),
+    g_ctx = @PushFrameK(f, flow_ctx, k),
+    HybridInlining_KContextSize(k),
+    EnableHybridInlining_KContextSensitivity().
+#ifndef CTADL_CCLYZER_FRONTEND
+.plan 1: (2, 1, 3, 4)
+#endif
+
+// Object follows a Parthian flow into another function
+ContextObj(formal, formal_ap, obj, g_ctx) :-
+    ContextObj(v, ap, obj, f_ctx),
+    ParthianFlowEdge(_, formal, formal_ap, f, v, ap, edge_ctx),
+    (   f_ctx = "", flow_ctx = edge_ctx
+    ;   1 = @CallStringUnder(edge_ctx, f_ctx), flow_ctx = f_ctx),
+    // cycle check
+    !contains(f, flow_ctx),
+    g_ctx = @PushFrame(f, flow_ctx),
+    !EnableHybridInlining_KContextSensitivity().
+#ifndef CTADL_CCLYZER_FRONTEND
+.plan 1: (2, 1)
+#endif
+
+// ---------------------------------------------------------------------------
+// Compositional rules with contexts
+
+// Context-dependent assignments reachable from appropriate context
+VirtualAssign(s, to, to_path, from, from_path, "hinline", ctx_call) :-
+    // We've resolved a Parthian resolvent, start the chain
+    CallEdge(s, m, ctx_call),
+    IndirectCallResolvent(ctx_call, s, _),
+    SummaryFlow(m, n1, p1, m, n2, p2, ""),
+    CCall_ActualParam(s, n1, to, to_actual_path),
+    CCall_ActualParam(s, n2, from, from_actual_path),
+    MatchComputedPrefix(to_path, to_actual_path, p1),
+    MatchComputedPrefix(from_path, from_actual_path, p2),
+    (to != from; to_path != from_path).
+
+VirtualAssign(s, to, to_path, from, from_path, "hinline2", f_ctx) :-
+    SummaryFlow(g, n1, p1, g, n2, p2, g_ctx),
+    CallEdge(s, g, ""),
+    IntCInsn_InFunction(s, _, f),
+    1 = @CallStringNonEmpty(g_ctx),
+    f = @TopFrame(g_ctx),
+    f_ctx = @PopFrame(g_ctx),
+    CCall_ActualParam(s, n1, to, to_actual_path),
+    CCall_ActualParam(s, n2, from, from_actual_path),
+    MatchComputedPrefix(to_path, to_actual_path, p1),
+    MatchComputedPrefix(from_path, from_actual_path, p2),
+    (to != from; to_path != from_path).
+
+VirtualAssign(s, to, to_path, from, from_path, "hinline3", f_ctx) :-
+    SummaryFlow(g, n1, p1, g, n2, p2, summary_ctx),
+    CallEdge(s, g, call_ctx),
+    summary_ctx != "",
+    call_ctx != "",
+    (   1 = @CallStringLte(call_ctx, summary_ctx), g_ctx = call_ctx
+    ;   1 = @CallStringLte(summary_ctx, call_ctx), g_ctx = summary_ctx),
+    IntCInsn_InFunction(s, _, f),
+    f = @TopFrame(g_ctx),
+    f_ctx = @PopFrame(g_ctx),
+    CCall_ActualParam(s, n1, to, to_actual_path),
+    CCall_ActualParam(s, n2, from, from_actual_path),
+    MatchComputedPrefix(to_path, to_actual_path, p1),
+    MatchComputedPrefix(from_path, from_actual_path, p2),
+    (to != from; to_path != from_path).
+
+// Context-dependent alloc instantiation
+VirtualAlloc(var, ap, obj, ctx_call) :-
+    CallEdge(s, f, ctx_call),
+    IndirectCallResolvent(ctx_call, s, _),
+    SummaryAlloc(f, n, summary_ap, obj, ""),
+    CCall_ActualParam(s, n, var, actual_ap),
+    MatchComputedPrefix(ap, actual_ap, summary_ap).
+    //ap = cat(actual_ap, summary_ap),
+    //isComputedAccessPath(ap).
+
+VirtualAlloc(var, ap, obj, f_ctx) :-
+    SummaryAlloc(g, n, summary_ap, obj, g_ctx),
+    CallEdge(s, g, ""),
+    IntCInsn_InFunction(s, _, f),
+    1 = @CallStringNonEmpty(g_ctx),
+    f = @TopFrame(g_ctx),
+    f_ctx = @PopFrame(g_ctx),
+    CCall_ActualParam(s, n, var, actual_ap),
+    ap = cat(actual_ap, summary_ap),
+    isComputedAccessPath(ap).
+
+VirtualAlloc(var, ap, obj, f_ctx) :-
+    SummaryAlloc(g, n, summary_ap, obj, summary_ctx),
+    CallEdge(s, g, call_ctx),
+    summary_ctx != "",
+    call_ctx != "",
+    (   1 = @CallStringLte(call_ctx, summary_ctx), g_ctx = call_ctx
+    ;   1 = @CallStringLte(summary_ctx, call_ctx), g_ctx = summary_ctx),
+    IntCInsn_InFunction(s, _, f),
+    1 = @CallStringNonEmpty(g_ctx),
+    f = @TopFrame(g_ctx),
+    f_ctx = @PopFrame(g_ctx),
+    CCall_ActualParam(s, n, var, actual_ap),
+    ap = cat(actual_ap, summary_ap),
+    isComputedAccessPath(ap).
+
+
+#ifdef ALL_OUTPUTS
+.output IndirectCallResolvent(CTADL_OUTPUT_DB_IO)
+.output IndirectCallResolventFunction(CTADL_OUTPUT_DB_IO)
+.output ContextObj(CTADL_OUTPUT_DB_IO)
+.output ParthianFlowEdge(CTADL_OUTPUT_DB_IO)
+.output ParthianVertex(CTADL_OUTPUT_DB_IO)
+//.output isContext(CTADL_OUTPUT_DB_IO)
+#endif
+
+.decl isContext(c: symbol)
+isContext(c) :- ContextObj(_, _, _, c).
+.decl isObjCtx(obj: symbol)
+isObjCtx(obj) :- ContextObj(_, _, obj, _).
+.decl isObjReachableVertex(var: CVar, path: CAccessPath)
+isObjReachableVertex(v, p) :- ContextObj(v, p, _, _).
+
+CTADLStats("ParthianVertex", n) :- n = count : { ParthianVertex(_, _, _) }.
+CTADLStats("ParthianFlowEdge", n) :- n = count : { ParthianFlowEdge(_, _, _, _, _, _, _) }.
+CTADLStats("ctx", n) :- n = count : { isContext(_) }.
+CTADLStats("obj-ctx", n) :- n = count : { isObjCtx(_) }.
+CTADLStats("obj-reachable-vertex", n) :- n = count : { isObjReachableVertex(_, _) }.
+CTADLStats("ContextObj", n) :- n = count : { ContextObj(_, _, _, _) }.
+//CTADLStats("ContextEdge", n) :- n = count : { ContextEdge(_, _) }.
+CTADLStats("LocallyReachable-ctx", n) :- n = count : { LocallyReachable(_, _, _, _, c), c != "" }.
+CTADLStats("virtual-assign-ctx", n) :- n = count : { VirtualAssign(_, _, _, _, _, _, c), c != "" }.
+CTADLStats("virtual-alloc-ctx", n) :- n = count : { VirtualAlloc(_, _, _, c), c != "" }.
+CTADLStats("summary-flow-ctx", n) :- n = count : { SummaryFlow(m1, _, _, m2, _, _, c), m1 = m2, c != "" }.
+CTADLStats("virtual-assign-star-ctx", n) :- n = count : { VirtualAssign(_, _, _, _, _, "star", c), c != "" }.
+CTADLStats("virtual-assign-starsummary-ctx", n) :- n = count : { VirtualAssign(_, _, _, _, _, "starsummary", c), c != "" }.
+CTADLStats("virtual-assign-starsummary2-ctx", n) :- n = count : { VirtualAssign(_, _, _, _, _, "starsummary22", c), c != "" }.

@@ -1,0 +1,6 @@
+#pragma once
+
+.type TaintFrontStatement = symbol
+.type TaintFrontMethod = symbol
+.type TaintFrontCallRecord = [id: number, inmeth: TaintFrontMethod]
+.type TaintFrontAccessPath = symbol

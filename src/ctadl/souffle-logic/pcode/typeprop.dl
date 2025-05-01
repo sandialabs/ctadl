@@ -1,0 +1,351 @@
+// This file should not depend, in general, on the relations in pcode_lang.dl
+
+// ---------------------------------------------------------------------------
+// declarations
+
+.decl isType(type: PCodeType)
+
+// type that isn't built from void
+.decl isInhabitedType(type: PCodeType)
+
+// Ghidra assigns type to node
+.decl VarnodeType_Ghidra(id: PCodeVarnode, type: PCodeType)
+
+// type reaches node by type unification
+.decl VarnodeType_Reaching(id: PCodeVarnode, type: PCodeType)
+
+// ---------------------------------------------------------------------------
+// impl
+
+CVar_Type(vn, "", ty) :-
+    VarnodeType_Reaching(vn, ty).
+
+.decl isVarnode(vn: PCodeVarnode)
+
+isVarnode(vn) :-
+    VNODE_SPACE(vn, _).
+
+.decl VNODE_TYPE(id: PCodeVarnode, type: PCodeType)
+
+VNODE_TYPE(vn, type) :-
+    VNODE_HVAR(vn, hv),
+    HVAR_TYPE(hv, type).
+
+// rep is the representative of the alias set for elt
+.decl Varnode_EqClassRep(rep: PCodeVarnode, elt: PCodeVarnode)
+
+// calculate alias sets based only on the original program
+.decl TypeConstraint_Edge(vn1: PCodeVarnode, vn2: PCodeVarnode)
+.output TypeConstraint_Edge(CTADL_OUTPUT_DB_IO)
+
+// an input and output have equal types
+#define TypeConstraint_InOut(mnemonic, n_in) \
+    TypeConstraint_Edge(out, in) :- \
+        PCODE_MNEMONIC(i, mnemonic), \
+        PCODE_OUTPUT(i, out), \
+        PCODE_INPUT(i, n_in, in)
+
+// all inputs have equal types
+#define TypeConstraint_Inputs(mnemonic) \
+    TypeConstraint_Edge(in1, in2) :- \
+        PCODE_MNEMONIC(i, mnemonic), \
+        PCODE_INPUT(i, n1, in1), \
+        PCODE_INPUT(i, n2, in2), \
+        n1 < n2
+
+// both of the above
+#define TypeConstraint_All(mnemonic) \
+    TypeConstraint_InOut(mnemonic, _). \
+    TypeConstraint_Inputs(mnemonic)
+
+// inputs and output have same type
+TypeConstraint_All("INT_ADD").
+TypeConstraint_All("INT_AND").
+TypeConstraint_InOut("INT_SRIGHT", 0).
+TypeConstraint_InOut("INT_RIGHT", 0).
+TypeConstraint_All("INT_MULT").
+TypeConstraint_All("INT_OR").
+TypeConstraint_All("INT_SDIV").
+TypeConstraint_InOut("INT_LEFT", 0).
+TypeConstraint_All("INT_SREM").
+TypeConstraint_All("INT_SUB").
+TypeConstraint_All("INT_DIV").
+TypeConstraint_All("INT_REM").
+TypeConstraint_All("INT_XOR").
+TypeConstraint_All("INT_CARRY").
+TypeConstraint_Inputs("INT_SCARRY").
+TypeConstraint_Inputs("INT_SBORROW").
+TypeConstraint_All("FLOAT_ADD").
+TypeConstraint_All("FLOAT_DIV").
+TypeConstraint_All("FLOAT_MULT").
+TypeConstraint_All("FLOAT_SUB").
+TypeConstraint_All("BOOL_AND").
+TypeConstraint_All("BOOL_OR").
+TypeConstraint_All("BOOL_XOR").
+TypeConstraint_All("COPY").
+//cast
+TypeConstraint_All("MULTIEQUAL").
+//trunc
+TypeConstraint_All("INT_SEXT").
+TypeConstraint_All("INT_ZEXT").
+//int2float
+TypeConstraint_All("INT_2COMP").
+TypeConstraint_All("INT_NEGATE").
+TypeConstraint_Inputs("INT_NOTEQUAL").
+TypeConstraint_Inputs("INT_EQUAL").
+TypeConstraint_Inputs("INT_SLESSEQUAL").
+TypeConstraint_Inputs("INT_LESSEQUAL").
+TypeConstraint_Inputs("INT_SLESS").
+TypeConstraint_Inputs("INT_LESS").
+TypeConstraint_All("BOOL_NEGATE").
+TypeConstraint_All("FLOAT_NEG").
+TypeConstraint_All("FLOAT_ABS").
+TypeConstraint_All("FLOAT_SQRT").
+TypeConstraint_All("FLOAT_CEIL").
+TypeConstraint_All("FLOAT_FLOOR").
+TypeConstraint_All("FLOAT_ROUND").
+TypeConstraint_All("FLOAT2FLOAT").
+TypeConstraint_Inputs("FLOAT_EQUAL").
+TypeConstraint_Inputs("FLOAT_LESSEQUAL").
+TypeConstraint_Inputs("FLOAT_LESS").
+TypeConstraint_InOut("INDIRECT", 0).
+
+
+// a equivalent to b, ord(b) >= ord(a)
+.decl TypeConstraint_OrderedEdge(a: PCodeVarnode, b: PCodeVarnode)
+
+// ensure edges (l, r) have l less than or equal to r
+TypeConstraint_OrderedEdge(dst, src) :- TypeConstraint_Edge(dst, src), ord(dst) < ord(src).
+TypeConstraint_OrderedEdge(src, dst) :- TypeConstraint_Edge(dst, src), ord(dst) >= ord(src).
+
+.decl Varnode_EqClassReps(rep: PCodeVarnode, elt: PCodeVarnode)
+// rep is ord of smallest element in the set
+Varnode_EqClassReps(a, a) :- isVarnode(a).
+Varnode_EqClassReps(arep, b) :- Varnode_EqClassReps(arep, a), TypeConstraint_OrderedEdge(a, b).
+// choose smallest as rep
+//Varnode_EqClassReps(oldrep, a) <= Varnode_EqClassReps(newrep, a) :- ord(newrep) < ord(oldrep).
+Varnode_EqClassRep(rep, v) :-
+    isVarnode(v),
+    ref = min ord(r) : { Varnode_EqClassReps(r, v) },
+    Varnode_EqClassReps(rep, v),
+    ref = ord(rep).
+
+VarnodeType_Ghidra(vn, type) :-
+    HVAR_CLASS(hv, class),
+    // don't trust HighOther
+    class != "other",
+    HVAR_TYPE(hv, type),
+    HVAR_REPRESENTATIVE(hv, vn).
+
+VarnodeType_Ghidra(vn, type) :-
+    VNODE_HVAR(vn, hv),
+    HVAR_TYPE(hv, type).
+
+VarnodeType_Reaching(vn, t) :- VarnodeType_Ghidra(vn, t).
+
+// propagate type to class rep
+VarnodeType_Reaching(rep, type) :-
+    VarnodeType_Reaching(vn, type),
+    Varnode_EqClassRep(rep, vn).
+
+// propagate class rep to members of class
+VarnodeType_Reaching(elt, type) :-
+    VarnodeType_Reaching(rep, type),
+    Varnode_EqClassRep(rep, elt).
+
+CisField(cat(".",f)) :- TYPE_STRUCT_FIELD_NAME(_, _, f).
+
+.decl VarnodePointerToAggregate(id: PCodeVarnode, agg_ty: PCodeType)
+.output VarnodePointerToAggregate(CTADL_OUTPUT_DB_IO)
+
+VarnodePointerToAggregate(vn, agg_ty) :-
+    VarnodeType_Reaching(vn, ty),
+    (TYPE_POINTER_BASE(ty, agg_ty); TYPE_ARRAY_BASE(ty, agg_ty)),
+    (TYPE_STRUCT(agg_ty); TYPE_UNION(agg_ty)).
+
+.decl FieldAccess(i: PCodeInstruction, var: PCodeVarnode, ap: CAccessPath, field_type: PCodeType)
+
+// PTRSUB of structure
+FieldAccess(i, structure_ptr, field_ap, field_type) :-
+    PCODE_MNEMONIC(i, "PTRSUB"),
+
+    // base is structure
+    PCODE_INPUT(i, 0, structure_ptr),
+    VarnodeType_Reaching(structure_ptr, structure_ptr_type),
+    TYPE_POINTER(structure_ptr_type),
+    TYPE_POINTER_BASE(structure_ptr_type, structure_type),
+    TYPE_STRUCT(structure_type),
+
+    // offset field info
+    PCODE_INPUT(i, 1, field_offset_vn),
+    isConstVarnode(field_offset_vn),
+    VNODE_OFFSET_N(field_offset_vn, field_offset),
+    TYPE_STRUCT_OFFSET_N(structure_type, field_index, field_offset),
+    TYPE_STRUCT_FIELD(structure_type, field_index, field_type),
+    isInhabitedType(field_type),
+    (   TYPE_STRUCT_FIELD_NAME(structure_type, field_index, field_name),
+        field_ap = PCode_MkFieldAccess(field_name)
+    ;   !TYPE_STRUCT_FIELD_NAME(structure_type, field_index, _),
+        field_ap = PCode_MkArrayIndex(to_string(field_offset))).
+
+// PTRSUB of structure
+FieldAccess(i, union_ptr, field_ap, field_type) :-
+    PCODE_MNEMONIC(i, "PTRSUB"),
+
+    // base is structure
+    PCODE_INPUT(i, 0, union_ptr),
+    VarnodeType_Reaching(union_ptr, union_ptr_type),
+    TYPE_POINTER(union_ptr_type),
+    TYPE_POINTER_BASE(union_ptr_type, union_type),
+    TYPE_UNION(union_type),
+
+    // offset field info
+    PCODE_INPUT(i, 1, field_offset_vn),
+    isConstVarnode(field_offset_vn),
+    VNODE_OFFSET_N(field_offset_vn, field_offset),
+    TYPE_UNION_OFFSET_N(union_type, field_index, field_offset),
+    TYPE_UNION_FIELD(union_type, field_index, field_type),
+    isInhabitedType(field_type),
+    (   TYPE_UNION_FIELD_NAME(union_type, field_index, field_name),
+        field_ap = PCode_MkFieldAccess(field_name)
+    ;   !TYPE_UNION_FIELD_NAME(union_type, field_index, _),
+        field_ap = PCode_MkArrayIndex(to_string(field_offset))).
+
+// PTRADD of array
+FieldAccess(i, array_ptr, offset_ap, elt_type) :-
+    PCODE_MNEMONIC(i, "PTRADD"),
+
+    // base is array
+    PCODE_INPUT(i, 0, array_ptr),
+    VarnodeType_Reaching(array_ptr, array_ptr_type),
+
+    // either points to an array or to a pointer
+    // get elt_type
+    DereferenceType(array_ptr_type, elt_type),
+
+    // offset
+    PCODE_INPUT(i, 1, index_vn),
+    isConstVarnode(index_vn),
+    PCODE_INPUT(i, 2, size_vn),
+    isConstVarnode(size_vn),
+    VNODE_OFFSET_N(index_vn, index),
+    VNODE_OFFSET_N(size_vn, size),
+    offset = index * size,
+    offset_ap = PCode_MkArrayIndex(to_string(offset)).
+
+
+// Varnode has constant value
+.decl ConstVarnode(vn: PCodeVarnode, value: number)
+//.output ConstVarnode(CTADL_OUTPUT_DB_IO)
+
+ConstVarnode(vn, value) :-
+    isConstVarnode(vn),
+    VNODE_OFFSET_N(vn, value).
+
+ConstVarnode(vn, value) :-
+    PCODE_MNEMONIC(i, add),
+    (add = "PTRSUB"; add = "INT_ADD"),
+    PCODE_INPUT(i, 0, in0),
+    PCODE_INPUT(i, 1, in1),
+
+    ConstVarnode(in0, value0),
+    ConstVarnode(in1, value1),
+
+    value = value0 + value1,
+    PCODE_OUTPUT(i, vn).
+
+    
+// Address of static data of given type
+.decl StaticStructAddr(address: number, ty: PCodeType)
+//.output StaticStructAddr(CTADL_OUTPUT_DB_IO)
+
+StaticStructAddr(addr, ty) :-
+    ConstVarnode(vn, addr),
+    VNODE_HVAR(vn, hv),
+    HVAR_TYPE(hv, ty),
+    TYPE_POINTER_BASE(ty, base_ty),
+    TYPE_STRUCT(base_ty).
+
+
+// Varnode represents a static access of the field based off a struct at the
+// address
+.decl StaticFieldAccess(vn: PCodeVarnode, addr: number, field: symbol)
+//.output StaticFieldAccess(CTADL_OUTPUT_DB_IO)
+
+StaticFieldAccess(vn, start, cat(".",name)) :-
+    StaticStructAddr(start, ptr_ty),
+    TYPE_POINTER_BASE(ptr_ty, struct_ty),
+    TYPE_STRUCT_OFFSET_N(struct_ty, n, field_offset),
+    offset = start + field_offset,
+    VNODE_OFFSET_N(vn, offset),
+    VNODE_SPACE(vn, "ram"),
+    TYPE_STRUCT_FIELD_NAME(struct_ty, n, name).
+
+VarnodeType_Reaching(ptr, ptr_ty) :-
+    FieldAccess(i, _, _, field_ty),
+    DereferenceType(ptr_ty, field_ty),
+    PCODE_OUTPUT(i, ptr),
+    !VarnodeType_Ghidra(ptr, _).
+
+// propagate ptr base ty to load output
+VarnodeType_Reaching(out, base_ty) :-
+    VarnodeType_Reaching(ptr, ptr_ty),
+    PCODE_INPUT(i, 1, ptr),
+    PCODE_MNEMONIC(i, "LOAD"),
+    PCODE_OUTPUT(i, out),
+    DereferenceType(ptr_ty, base_ty),
+    !VarnodeType_Ghidra(out, _).
+
+// propagate load output type to ptr arg
+VarnodeType_Reaching(ptr, ptr_ty) :-
+    VarnodeType_Reaching(out, base_ty),
+    PCODE_OUTPUT(i, out),
+    PCODE_MNEMONIC(i, "LOAD"),
+    DereferenceType(ptr_ty, base_ty),
+    PCODE_INPUT(i, 1, ptr),
+    !VarnodeType_Ghidra(ptr, _).
+
+// propagate ptr type to stored val
+VarnodeType_Reaching(val, val_ty) :-
+    VarnodeType_Reaching(ptr, ptr_ty),
+    PCODE_INPUT(i, 1, ptr),
+    PCODE_MNEMONIC(i, "STORE"),
+    DereferenceType(ptr_ty, val_ty),
+    PCODE_INPUT(i, 2, val),
+    !VarnodeType_Ghidra(val, _).
+
+// propagate val type to stored ptr arg
+VarnodeType_Reaching(ptr, ptr_ty) :-
+    VarnodeType_Reaching(val, val_ty),
+    PCODE_INPUT(i, 2, val),
+    PCODE_MNEMONIC(i, "STORE"),
+    DereferenceType(ptr_ty, val_ty),
+    PCODE_INPUT(i, 1, ptr),
+    !VarnodeType_Ghidra(ptr, _).
+
+isType(t) :-
+    TYPE_LENGTH(t, _).
+
+isInhabitedType(type) :-
+    TYPE_LENGTH(type, len), len != 0. // void is 0, i hope
+
+.decl DereferenceType(ptr_ty: PCodeType, elt_ty: PCodeType)
+
+DereferenceType(ptr_ty, ty) :-
+    TYPE_POINTER(ptr_ty),
+    TYPE_POINTER_BASE(ptr_ty, ty).
+
+DereferenceType(array_ty, ty) :-
+    TYPE_ARRAY(array_ty),
+    TYPE_ARRAY_BASE(array_ty, ty).
+
+
+#ifdef ALL_OUTPUTS
+.output VNODE_TYPE(CTADL_OUTPUT_DB_IO)
+.output Varnode_EqClassReps(CTADL_OUTPUT_DB_IO)
+.output isInhabitedType(CTADL_OUTPUT_DB_IO)
+.output isType(CTADL_OUTPUT_DB_IO)
+.output VarnodeType_Ghidra(CTADL_OUTPUT_DB_IO)
+.output VarnodeType_Reaching(CTADL_OUTPUT_DB_IO)
+.output FieldAccess(CTADL_OUTPUT_DB_IO)
+#endif

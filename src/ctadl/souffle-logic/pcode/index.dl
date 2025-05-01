@@ -1,0 +1,82 @@
+#include "pcode/pcode_lang.dl"
+#ifdef CTADL_IMPORT_LANG_FACTS_FROM_DB
+#include "pcode/importdb.dl"
+#else
+#include "pcode/import.dl"
+#endif
+
+CTADLConfig("CTADL_ANALYSIS_LANG", "PCODE").
+
+#ifndef CTADL_DISABLE_INDEX_PHASE
+
+#ifdef CTADL_PCODE_PRINT
+.output PCodePrint
+.output PCodePrint2
+#endif
+
+// ---------------------------------------------------------------------------
+// phase 1
+
+#include "graph/dataflow_graph.dl"
+
+.init ctadl_pcode_phase1 = CGraphRules
+
+// ---------------------------------------------------------------------------
+// tracks flows of known function pointers to resolve indirect calls
+
+#ifndef CTADL_PCODE_DISABLE_INDIRECT_CALL_RESOLUTION
+
+#define FS_ReachableCallEdgePlan
+#define FS_CalledFormalPlan
+#define FS_ReachableReturnEdgePlan
+
+/* #define FS_VirtualAssignPlan \ */
+/*     .plan 1: (2, 1) */
+/* #define FS_ReachableCallEdgePlan \ */
+/*     .plan 1: (3, 2, 1) */
+/* #define FS_CalledFormalPlan \ */
+/*     .plan 1: (3, 2, 1) */
+/* #define FS_ReachableReturnEdgePlan \ */
+/*     .plan 1: (2, 1) */
+
+#include "graph/slice/callee.dl"
+
+#ifdef ALL_OUTPUTS
+.output track_assign_func.ReachableVertex(CTADL_OUTPUT_DB_IO)
+#endif
+
+.init track_assign_func = SliceCallee
+track_assign_func.input_.StartVertex(v, p, func) :-
+    VirtualAlloc(v, p, func, "").
+
+CallEdge(i, fid, "") :-
+    track_assign_func.isReachable(func_op, "", fid),
+    CCall_ActualParam(i, PCODE_FUNC_ARG_INDEX, func_op, "").
+
+#if 0
+.decl CallInSameFuncAsReachable(call: PCodeInstruction, reachable: PCodeVarnode)
+.output CallInSameFuncAsReachable(CTADL_OUTPUT_DB_IO)
+
+CallInSameFuncAsReachable(i, func_op) :-
+    // something pointing at fid is reachable inside func_op_fid
+    track_assign_func.isReachable(func_op, "", fid),
+    VNODE_HFUNC(func_op, func_op_fid),
+    func_op_fid != fid,
+
+    // call is in func_op_fid, too
+    CallInstruction(i, call_op),
+    PCODE_MNEMONIC(i, "CALLIND"),
+    PCODE_PARENT(i, bb),
+    BB_HFUNC(bb, func_op_fid).
+#endif
+
+#endif // CTADL_PCODE_DISABLE_INDIRECT_CALL_RESOLUTION
+
+//#include "pcode/models.dl"
+
+#endif // CTADL_DISABLE_INDEX_PHASE
+
+#include <export.dl>
+#include <pcode/export.dl>
+
+.pragma "suppress-warnings" "CFunction_ModelAssign,track_assign_func.input_.SanitizeAssign,GEPVarnode_NamedAccessPath,CInsn_ModelAssign"

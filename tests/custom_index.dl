@@ -1,0 +1,95 @@
+
+// alternative ways to designate source vertices
+
+// taint originates in any byref formal of the function
+.decl TaintSourceMethod(tag: TaintLabelType, method: CFunction)
+// taint originates in parameter index of the function
+.decl TaintSourceMethodArg(tag: TaintLabelType, index: number, method: CFunction)
+// taint originates at the call statement
+.decl TaintSourceCallArg(tag: TaintLabelType, index: number, call: CInsn)
+
+
+// alternative ways to designated sink vertices
+
+// report a leak if tainted data reaches any argument of the function
+.decl LeakingSinkMethod(tag: TaintLabelType, method: CFunction)
+// report a leak if tainted data reaches the indexed argument of the function
+.decl LeakingSinkMethodArg(tag: TaintLabelType, index: number, method: CFunction)
+// report a leak if tainted data reaches the indexed argument of the call
+.decl LeakingSinkCallArg(tag: TaintLabelType, index: number, call: CInsn)
+
+// if n2 is tainted, taint n1 at the call site
+.decl TaintTransferCallArg(stmt: CInsn, n1: number, n2: number)
+.decl TaintTransferCallArgs(call1: CInsn, n1: number, call2: CInsn, n2: number)
+
+// alternative ways to designate sanitizer edges
+.decl TaintSanitizeFunctionArg(tag: TaintLabelType, function: CFunction, input_index: number, output_index: number)
+
+// ---------------------------------------------------------------------------
+// source rules
+
+TaintSourceMethodArg(tag, n, mid) :-
+    TaintSourceMethod(tag, mid),
+    CFunction_FormalParam(mid, n, _),
+    CFunction_isFormalParamByRef(mid, n),
+    !CGlobalParameter(n).
+
+/* TaintSourceVertex(tag, v, p) :- */
+/*     TaintSourceMethodArg(tag, n, mid), */
+/*     forward_flow.input_.CallEdge(call_stmt, mid), */
+/*     forward_flow.input_.ActualParam(call_stmt, n, v, p). */
+
+TaintSourceVertex(label, param, "") :-
+    TaintSourceMethodArg(label, n, fid),
+    CFunction_FormalParam(fid, n, param).
+
+TaintSourceVertex(tag, v, p) :-
+    TaintSourceCallArg(tag, n, stmt),
+    CCall_ActualParam(stmt, n, v, p).
+
+// ---------------------------------------------------------------------------
+// sink rules
+
+LeakingSinkMethodArg(t, n, sink_mid) :-
+    LeakingSinkMethod(t, sink_mid),
+    CFunction_FormalParam(sink_mid, n, _),
+    !CReturnParameter(n),
+    !CGlobalParameter(n).
+
+// i think methodarg should set up the formal as the sink, but keeping this
+// here for now in case i'm wrong
+/* LeakingSinkVertex(tag, v, p) :- */
+/*     LeakingSinkMethodArg(tag, n, mid), */
+/*     forward_flow.input_.CallEdge(call, mid), */
+/*     forward_flow.input_.ActualParam(call, n, v, p). */
+
+// below, we set up the ap suffixes of formals and actuals, respectively, as
+// sinks. this is because it seems intuitive that if you want to know if
+// tainted data is passed to some function, you don't care whether the taint is
+// on a field or on the object.
+
+// if users desire more fine grained control, they can just populate
+// LeakingSinkVertex directly.
+
+// sets up every ap to be a sink
+LeakingSinkVertex(label, param, ap) :-
+    LeakingSinkMethodArg(label, n, fid),
+    CFunction_FormalParam(fid, n, param),
+    Vertex(param, ap).
+
+// sets up any suffix of the actual ap to be a sink
+LeakingSinkVertex(tag, v, taint_ap) :-
+    LeakingSinkCallArg(tag, index, call),
+    CCall_ActualParam(call, index, v, actual_ap),
+    MatchComputedPrefix(taint_ap, actual_ap, _suffix),
+    Vertex(v, taint_ap).
+
+// ---------------------------------------------------------------------------
+// sanitizer rules
+
+TaintSanitizeEdge(label, var_out, ap_out, var_in, ap_in) :-
+    TaintSanitizeFunctionArg(label, function, input_index, output_index),
+    CInsn_Call(call, function),
+    CCall_ActualParam(call, input_index, var_in, ap_in),
+    CCall_ActualParam(call, output_index, var_out, ap_out).
+

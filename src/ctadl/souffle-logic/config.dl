@@ -1,0 +1,383 @@
+#pragma once
+#include "macros.dl"
+
+// Interface to CTADLConfig is documented in the CTADL schema file
+
+.decl EnableStar()
+.decl EnableHybridInlining()
+.decl EnableClassHierarchyAnalysis()
+.decl EnableContextFreeObjectTracking()
+.decl DisableGlobalDataFlow()
+
+// In hybrid inlining, enables an approximation called k-context-sensitivity.
+// This makes the analysis pay attention to the
+// HybridInlining_KContextSensitivity parameter. It discards contexts that have
+// more than K elements *on the top*.
+.decl EnableHybridInlining_KContextSensitivity()
+// In hybrid inlining, enables an approximation that "inlines" (works up the
+// stack) only to depth K to look for objects that resolve indirect calls.
+.decl EnableHybridInlining_KInliningSensitivity()
+// Analysis parameter.
+.decl HybridInlining_KContextSize(K: number)
+.decl HybridInlining_KInliningSize(K: number)
+
+.decl EnableHybridInlining_AddParthiansToVertex()
+
+.decl DisableInterproceduralLocalReachCheck()
+
+.decl DynamicAccessPaths_MaxLength(K: number)
+
+CTADLConfig(f, to_string(v)) :- CTADLConfig_Input(f, v).
+
+CTADLConfig("CTADL_Version", QUOTE(CTADL_VERSION)).
+
+#ifdef ALL_OUTPUTS
+CTADLConfig("ALL_OUTPUTS", "1").
+#else
+CTADLConfig("ALL_OUTPUTS", "0").
+#endif
+
+EnableStar() :- CTADLConfig("CTADL_ENABLE_STAR", "1").
+EnableHybridInlining() :- CTADLConfig("CTADL_ENABLE_HYBRID_INLINING", "1").
+EnableClassHierarchyAnalysis() :- CTADLConfig("CTADL_ENABLE_CHA", "1").
+EnableContextFreeObjectTracking() :- CTADLConfig("CTADL_ENABLE_CONTEXT_FREE_OBJECT_TRACKING", "1").
+DisableGlobalDataFlow() :- CTADLConfig("CTADL_DISABLE_GLOBAL_DATA_FLOW", "1").
+
+EnableHybridInlining_KInliningSensitivity() :- CTADLConfig("CTADL_ENABLE_HYBRID_INLINING_K_INLINING_SENSITIVITY", "1").
+HybridInlining_KInliningSize(k) :- CTADLConfig("CTADL_HYBRID_INLINING_K_INLINING_SIZE", kstr), k = to_number(kstr).
+
+EnableHybridInlining_AddParthiansToVertex() :- CTADLConfig("CTADL_HYBRID_INLINING_ADD_PARTHIANS_TO_VERTEX", "1").
+
+EnableHybridInlining_KContextSensitivity() :- CTADLConfig("CTADL_ENABLE_HYBRID_INLINING_K_CONTEXT_SENSITIVITY", "1").
+HybridInlining_KContextSize(k) :- CTADLConfig("CTADL_HYBRID_INLINING_K_CONTEXT_SIZE", kstr), k = to_number(kstr).
+
+DynamicAccessPaths_MaxLength(k) :- CTADLConfig("CTADL_DYNAMIC_ACCESS_PATHS_MAX_LENGTH", kstr), k = to_number(kstr), k > 0.
+
+#ifndef CTADL_IMPORT_IR_FROM_DB
+.input MG_Edge2
+.input MG_Edge1
+.input MG_AllOf
+.input MG_AnyOf
+.input MG_Not
+.input MG_OpNode
+.input MG_SigMatchParent
+.input MG_SigMatchPattern
+.input MG_SigMatchName
+.input MG_SigMatchUnqualifiedId
+.input MG_Parent
+.input MG_Extends
+.input MG_Parameter
+.input MG_AnyParameter
+.input MG_NumberParameters
+.input MG_IntCompare
+.input MG_Name
+.input MG_HasCode
+.input MG_Propagation
+.input MG_ForwardSelf
+.input MG_ForwardCall
+.input MG_UsesFieldName
+.input MG_UsesFieldUnqualifiedId
+.input MG_Endpoint
+.input MG_EndpointVertex
+.input MG_EndpointField
+.input MG_EndpointInsn
+#else
+.input MG_Edge2(CTADL_INPUT_DB_IO)
+.input MG_Edge1(CTADL_INPUT_DB_IO)
+.input MG_AllOf(CTADL_INPUT_DB_IO)
+.input MG_AnyOf(CTADL_INPUT_DB_IO)
+.input MG_Not(CTADL_INPUT_DB_IO)
+.input MG_OpNode(CTADL_INPUT_DB_IO)
+.input MG_SigMatchParent(CTADL_INPUT_DB_IO)
+.input MG_SigMatchPattern(CTADL_INPUT_DB_IO)
+.input MG_SigMatchName(CTADL_INPUT_DB_IO)
+.input MG_SigMatchUnqualifiedId(CTADL_INPUT_DB_IO)
+.input MG_Parent(CTADL_INPUT_DB_IO)
+.input MG_Extends(CTADL_INPUT_DB_IO)
+.input MG_Parameter(CTADL_INPUT_DB_IO)
+.input MG_AnyParameter(CTADL_INPUT_DB_IO)
+.input MG_NumberParameters(CTADL_INPUT_DB_IO)
+.input MG_IntCompare(CTADL_INPUT_DB_IO)
+.input MG_Name(CTADL_INPUT_DB_IO)
+.input MG_HasCode(CTADL_INPUT_DB_IO)
+.input MG_Propagation(CTADL_INPUT_DB_IO)
+.input MG_ForwardSelf(CTADL_INPUT_DB_IO)
+.input MG_ForwardCall(CTADL_INPUT_DB_IO)
+.input MG_UsesFieldName(CTADL_INPUT_DB_IO)
+.input MG_UsesFieldUnqualifiedId(CTADL_INPUT_DB_IO)
+.input MG_Endpoint(CTADL_INPUT_DB_IO)
+.input MG_EndpointVertex(CTADL_INPUT_DB_IO)
+.input MG_EndpointField(CTADL_INPUT_DB_IO)
+.input MG_EndpointInsn(CTADL_INPUT_DB_IO)
+.input MG_SliceDirection(CTADL_INPUT_DB_IO)
+#endif
+
+CFunction_ModelAssign(fid, dstindex, dstap, fid, srcindex, srcap) :-
+    MG_FuncEval(rootid, fid),
+    MG_Propagation(rootid, propid, "input", srcparam, src_is_star, srcap),
+    MG_Propagation(rootid, propid, "output", dstparam, dst_is_star, dstap),
+    (   src_is_star != 0,
+        CFunction_FormalParam(fid, srcindex, _),
+        srcindex >= 0,
+        srcparam=srcparam
+    ;   src_is_star = 0, srcindex = srcparam),
+    (   dst_is_star != 0,
+        CFunction_FormalParam(fid, dstindex, _),
+        dstindex >= 0,
+        dstparam=dstparam
+    ;   dst_is_star = 0, dstindex = dstparam),
+    !CGlobalParameter(srcindex),
+    !CGlobalParameter(dstindex).
+
+
+// Impl notes:
+
+// Some constraints, like "signature", can be handled bottom up because they
+// always constrain functions. So we just evaluate the constraint to filter a
+// set of functions.
+
+// The constraints with "inner," though, have to be handled top down instead of
+// bottom up. the innermost constraint, say on a name, doesn't know what thing
+// it should constrain unless there is a "supplier" from above. The "Supplies"
+// relations are going top down. They generate values at the root of a
+// constraint and pass those values down to be filtered. Eventually some of
+// them may end up in an "Eval" relation.
+
+MG_FuncEval(opid, fid) :-
+    MG_OpNode(opid, "union"),
+    MG_Edge2(opid, c1, c2),
+    (   MG_FuncEval(c1, fid), c2=c2
+    ;   MG_FuncEval(c2, fid), c1=c1).
+
+MG_FuncEval(opid, fid) :-
+    MG_OpNode(opid, "intersection"),
+    MG_Edge2(opid, c1, c2),
+    MG_FuncEval(c1, fid),
+    MG_FuncEval(c2, fid).
+
+MG_VarEval(opid, vid) :-
+    MG_OpNode(opid, "union"),
+    MG_Edge2(opid, c1, c2),
+    (   MG_VarEval(c1, vid), c2=c2
+    ;   MG_VarEval(c2, vid), c1=c1).
+
+MG_VarEval(opid, vid) :-
+    MG_OpNode(opid, "intersection"),
+    MG_Edge2(opid, c1, c2),
+    MG_VarEval(c1, vid),
+    MG_VarEval(c2, vid).
+
+MG_InsnEval(opid, vid) :-
+    MG_OpNode(opid, "union"),
+    MG_Edge2(opid, c1, c2),
+    (   MG_InsnEval(c1, vid), c2=c2
+    ;   MG_InsnEval(c2, vid), c1=c1).
+
+MG_InsnEval(opid, nameid) :-
+    MG_OpNode(opid, "intersection"),
+    MG_Edge2(opid, c1, c2),
+    MG_InsnEval(c1, nameid),
+    MG_InsnEval(c2, nameid).
+
+MG_FieldEval(opid, vid) :-
+    MG_OpNode(opid, "union"),
+    MG_Edge2(opid, c1, c2),
+    (   MG_FieldEval(c1, vid), c2=c2
+    ;   MG_FieldEval(c2, vid), c1=c1).
+
+MG_FieldEval(opid, nameid) :-
+    MG_OpNode(opid, "intersection"),
+    MG_Edge2(opid, c1, c2),
+    MG_FieldEval(c1, nameid),
+    MG_FieldEval(c2, nameid).
+
+MG_NumberEval(opid, n) :-
+    MG_OpNode(opid, "union"),
+    MG_Edge2(opid, c1, c2),
+    (   MG_NumberEval(c1, n), c2=c2
+    ;   MG_NumberEval(c2, n), c1=c1).
+
+MG_NumberEval(opid, n) :-
+    MG_OpNode(opid, "intersection"),
+    MG_Edge2(opid, c1, c2),
+    MG_NumberEval(c1, n),
+    MG_NumberEval(c2, n).
+
+MG_NameEval(opid, name) :-
+    MG_OpNode(opid, "union"),
+    MG_Edge2(opid, c1, c2),
+    (   MG_NameEval(c1, name), c2=c2
+    ;   MG_NameEval(c2, name), c1=c1).
+
+MG_NameEval(opid, nameid) :-
+    MG_OpNode(opid, "intersection"),
+    MG_Edge2(opid, c1, c2),
+    MG_NameEval(c1, nameid),
+    MG_NameEval(c2, nameid).
+
+MG_FuncEval(nodeid, fid) :-
+    MG_SigMatchName(nodeid, name),
+    CFunction_Name(fid, name).
+
+MG_VarEval(nodeid, vid) :-
+    MG_SigMatchName(nodeid, name),
+    (   CVar_SourceInfo(vid, SOURCE_INFO_NAME_KEY, name)
+    ;   CVar_Name(vid, name)).
+
+MG_FieldEval(nodeid, f) :-
+    MG_SigMatchName(nodeid, name),
+    CisField(f),
+    CField_Name(f, name).
+
+MG_FuncEval(nodeid, fid) :-
+    MG_SigMatchParent(nodeid, parent),
+    CNamespace_Parent(fid, parent).
+
+MG_VarEval(nodeid, vid) :-
+    MG_SigMatchParent(nodeid, parent),
+    CVar_InFunction(vid, parent).
+
+MG_FuncEval(nodeid, fid) :-
+    MG_SigMatchPattern(nodeid, pattern),
+    CFunction_Signature(fid, sig),
+    match(pattern, sig).
+
+MG_FieldEval(nodeid, f) :-
+    MG_SigMatchPattern(nodeid, pattern),
+    CisField(f),
+    match(pattern, f).
+
+MG_FuncEval(nodeid, fid) :-
+    MG_SigMatchUnqualifiedId(nodeid, fid),
+    CisFunction(fid).
+
+MG_InsnEval(nodeid, id) :-
+    MG_SigMatchUnqualifiedId(nodeid, id),
+    CInsn_InFunction(id, _, _).
+
+MG_VarEval(nodeid, id) :-
+    MG_SigMatchUnqualifiedId(nodeid, id),
+    CVar_InFunction(id, _).
+
+MG_FieldEval(nodeid, id) :-
+    MG_SigMatchUnqualifiedId(nodeid, id),
+    CisField(id).
+
+MG_FuncEval(nodeid, fid) :-
+    MG_Name(nodeid, pattern),
+    CFunction_Name(fid, name),
+    match(pattern, name).
+
+MG_SuppliesName(childid, parent) :-
+    MG_Parent(nodeid),
+    MG_Edge1(nodeid, childid),
+    CNamespace_Parent(fid, parent),
+    CisFunction(fid).
+
+MG_SuppliesName(innerid, parent_namespace) :-
+    MG_SuppliesName(nodeid, namespace),
+    MG_Extends(nodeid),
+    CNamespace_Parent(namespace, parent_namespace),
+    MG_Edge1(nodeid, innerid).
+
+MG_InsnEval(nodeid, i) :-
+    (   MG_UsesFieldName(nodeid, name), CField_Name(field, name)
+    ;   MG_UsesFieldUnqualifiedId(nodeid, field)),
+    (   CInsn_Move(i, _, field, _, _)
+    ;   CInsn_Move(i, _, _, _, field)).
+
+MG_FuncEval(nodeid, fid) :-
+    MG_InsnEval(nodeid, i),
+    CInsn_InFunction(i, _, fid).
+
+MG_NameEval(nodeid, name) :-
+    MG_SuppliesName(nodeid, name),
+    MG_Name(nodeid, pat),
+    match(pat, name).
+
+MG_NameEval(nodeid, name) :-
+    MG_SuppliesName(innerid, name),
+    MG_Name(innerid, pat),
+    MG_Edge1(nodeid, innerid),
+    MG_Not(nodeid),
+    !match(pat, name).
+
+MG_SuppliesNumber(innerid, n) :-
+    MG_NumberParameters(nodeid),
+    CFunction_Arity(_, n),
+    MG_Edge1(nodeid, innerid).
+
+MG_FuncEval(nodeid, fid) :-
+    MG_NumberEval(innerid, n),
+    CFunction_Arity(fid, n),
+    MG_Edge1(nodeid, innerid),
+    MG_NumberParameters(nodeid).
+
+MG_NumberEval(nodeid, n) :-
+    MG_SuppliesNumber(nodeid, n),
+    MG_IntCompare(nodeid, rel, value),
+    (   rel = ">=", n >= value
+    ;   rel = ">", n > value
+    ;   rel = "<=", n <= value
+    ;   rel = "<", n < value
+    ;   rel = "!=", n != value
+    ;   rel = "==", n = value).
+
+MG_NumberEval(nodeid, n) :-
+    MG_SuppliesNumber(innerid, n),
+    MG_IntCompare(innerid, rel, value),
+    MG_Edge1(nodeid, innerid),
+    MG_Not(nodeid),
+    (   rel = ">=", !(n >= value)
+    ;   rel = ">", !(n > value)
+    ;   rel = "<=", !(n <= value)
+    ;   rel = "<", !(n < value)
+    ;   rel = "!=", !(n != value)
+    ;   rel = "==", !(n = value)).
+
+MG_SuppliesName(innerid, param),
+MG_SuppliesNumber(innerid, index) :-
+    MG_Parameter(nodeid, index),
+    CFunction_FormalParam(_, index, param),
+    !CGlobalParameter(index),
+    MG_Edge1(nodeid, innerid).
+
+MG_SuppliesName(innerid, param),
+MG_SuppliesNumber(innerid, index) :-
+    MG_AnyParameter(nodeid, start_index),
+    CFunction_FormalParam(_, index, param),
+    start_index <= index,
+    !CGlobalParameter(index),
+    MG_Edge1(nodeid, innerid).
+
+MG_FuncEval(nodeid, fid) :-
+    MG_HasCode(nodeid, value),
+    (   value = "true", CInsn_InFunction(_, _, fid)
+    ;   value = "false", CisFunction(fid), !CInsn_InFunction(_, _, fid)).
+
+MG_FuncEval(nodeid, fid) :-
+    MG_FuncEval(innerid, eval_fid),
+    MG_Edge1(nodeid, innerid),
+    MG_Not(nodeid),
+    CisFunction(fid),
+    fid != eval_fid.
+
+#ifdef ALL_OUTPUTS
+.output MG_OpNode(CTADL_OUTPUT_DB_IO)
+.output MG_Edge1(CTADL_OUTPUT_DB_IO)
+.output MG_Edge2(CTADL_OUTPUT_DB_IO)
+.output MG_FuncEval(CTADL_OUTPUT_DB_IO)
+.output MG_VarEval(CTADL_OUTPUT_DB_IO)
+.output MG_NameEval(CTADL_OUTPUT_DB_IO)
+.output MG_FieldEval(CTADL_OUTPUT_DB_IO)
+.output MG_InsnEval(CTADL_OUTPUT_DB_IO)
+.output MG_NumberEval(CTADL_OUTPUT_DB_IO)
+.output MG_SuppliesName(CTADL_OUTPUT_DB_IO)
+.output MG_SuppliesNumber(CTADL_OUTPUT_DB_IO)
+.output MG_CallModel(CTADL_OUTPUT_DB_IO)
+.output MG_SigMatchName(CTADL_OUTPUT_DB_IO)
+.output MG_SigMatchParent(CTADL_OUTPUT_DB_IO)
+.output MG_SigMatchPattern(CTADL_OUTPUT_DB_IO)
+.output MG_ForwardSelf(CTADL_OUTPUT_DB_IO)
+.output MG_ForwardCall(CTADL_OUTPUT_DB_IO)
+#endif

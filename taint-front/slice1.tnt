@@ -1,0 +1,13 @@
+def call_source() {
+  x = source(File);
+  return x;
+}
+
+def call_sink(x) {
+  sink(x, File);
+}
+
+def Main() {
+  x = call_source();
+  call_sink(x);
+}

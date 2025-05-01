@@ -1,0 +1,17 @@
+#pragma once
+
+// used by clients
+.decl IndirectCallStmt(stmt: TaintFrontStatement, v: symbol, path: TaintFrontAccessPath)
+.decl AssignFunctionStmt(stmt: TaintFrontStatement, v: symbol, path: TaintFrontAccessPath, func: TaintFrontMethod)
+
+// raw input
+.decl Function(fn: TaintFrontMethod, arity: number)
+.decl Global(var: symbol, index: number)
+.decl FormalParam(index: number, fn: TaintFrontMethod, var: symbol)
+.decl ActualParam(index: number, var: symbol, path: TaintFrontAccessPath, info: TaintFrontCallRecord)
+.decl Assign(v1: symbol, p1: TaintFrontAccessPath, v2: symbol, p2: TaintFrontAccessPath, fn: TaintFrontMethod, id: number)
+.decl AssignFunction(v1: symbol, p1: TaintFrontAccessPath, m: TaintFrontMethod, fn: TaintFrontMethod, id: number)
+.decl DirectCall(fn: TaintFrontMethod, info: TaintFrontCallRecord)
+.decl IndirectCall(var: symbol, path: TaintFrontAccessPath, info: TaintFrontCallRecord)
+.decl TaintSpec(source_sink_sanitizer: symbol, v: symbol, p: TaintFrontAccessPath, label: symbol, fn: TaintFrontMethod, id: number, sanitize_from: symbol, sanitize_from_path: TaintFrontAccessPath)
+

@@ -1,0 +1,7 @@
+#include "analysis/pcode/index.dl"
+
+UnhandledOnPurpose(i) :-
+    PCODE_MNEMONIC(i, _),
+    (   i = "ngx_http_destination_charset@10005aa40:10005ab34:224";
+        i = "ngx_http_destination_charset@10005aa40:10005ab30:222";
+        i = "ngx_http_destination_charset@10005aa40:10005aad3:158").

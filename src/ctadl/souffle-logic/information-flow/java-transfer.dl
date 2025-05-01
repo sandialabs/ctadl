@@ -1,0 +1,37 @@
+// taint models for java language libraries
+
+TaintTransferCallArg(call, n1, n2) :-
+    (
+      method = "<java.io.InputStreamReader: void <init>(java.io.InputStream)>";
+      method = "<java.io.BufferedReader: void <init>(java.io.Reader)>"
+    ),
+    CallEdge(call, method, ""),
+    n2 = 0,
+    n1 = -2.
+
+TaintTransferCallArg(call, n1, n2) :-
+    (
+      method = "<java.io.BufferedReader: java.lang.String readLine()>";
+      method = "<java.lang.StringBuilder: java.lang.String toString()>"
+    ),
+    CallEdge(call, method, ""),
+    n2 = -2,
+    n1 = -1.
+
+TaintTransferCallArg(call, n1, n2) :-
+    (
+      method = "<java.io.File: void <init>(java.lang.String)>";
+      method = "<java.io.FileInputStream: void <init>(java.io.File)>"
+    ),
+    CallEdge(call, method, ""),
+    n2 = 0,
+    n1 = -2.
+
+// taint from this to arg
+TaintTransferCallArg(call, n1, n2) :-
+    (
+      method = "<java.io.FileInputStream: int read(byte[],int,int)>"
+    ),
+    CallEdge(call, method, ""),
+    n2 = -2,
+    n1 = 0.

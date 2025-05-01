@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+
+set -x
+
+#----------------------------------------------------------------------
+# Ghidra Headless Analyzer launch (see analyzeHeadlessREADME.html)
+#----------------------------------------------------------------------
+
+# Maximum heap memory may be changed if default is inadequate. This will generally be up to 1/4 of 
+# the physical memory available to the OS. Uncomment MAXMEM setting if non-default value is needed.
+MAXMEM=40G
+
+# Launch mode can be changed to one of the following: fg, debug, debug-suspend
+LAUNCH_MODE=fg
+
+# Set the debug address to listen on.
+# NOTE: This variable is ignored if not launching in a debugging mode.
+DEBUG_ADDRESS=127.0.0.1:13002
+
+# Limit the # of garbage collection and JIT compiler threads in case many headless
+# instances are run in parallel.  By default, Java will assign one thread per core
+# which does not scale well on servers with many cores.
+VMARG_LIST="-XX:ParallelGCThreads=4 -XX:CICompilerCount=4 "
+
+# Resolve symbolic link if present and get the directory this script lives in.
+# NOTE: "readlink -f" is best but works on Linux only, "readlink" will only work if your PWD
+# contains the link you are calling (which is the best we can do on macOS), and the "echo" is the 
+# fallback, which doesn't attempt to do anything with links.
+ghidra_bin=$(readlink -e $(which ghidra))
+if [ ! -z "$GHIDRA_HOME" ]; then
+    ghidra_base=$GHIDRA_HOME
+elif [ ! -z "$ghidra_bin" ]; then
+    ghidra_base=$(dirname "$ghidra_bin")
+else
+    echo "Could not find ghidra in path. Add 'ghidra' to path or set GHIDRA_HOME" >&2
+    exit 1
+fi
+if [ -e "$ghidra_base/../lib/ghidra/support/analyzeHeadless" ]; then
+    analyze_headless=$ghidra_base/../lib/ghidra/support/analyzeHeadless
+elif [ -e "$ghidra_base/support/analyzeHeadless" ]; then
+    analyze_headless=$ghidra_base/support/analyzeHeadless
+else
+    echo "Could not find ghidra analyzeHeadless from ghidra directory $ghidra_base" >&2
+    exit 1
+fi
+echo "Analyze headless path: $analyze_headless" >&2
+SCRIPT_DIR="${analyze_headless%/*}"
+
+# Launch HeadlessAnalyzer.
+# DEBUG_ADDRESS set via environment for launch.sh
+DEBUG_ADDRESS=${DEBUG_ADDRESS} "${SCRIPT_DIR}"/launch.sh "${LAUNCH_MODE}" jdk Ghidra-Headless "${MAXMEM}" "${VMARG_LIST}" ghidra.app.util.headless.AnalyzeHeadless "$@"

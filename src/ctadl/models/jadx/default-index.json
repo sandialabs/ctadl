@@ -1,0 +1,947 @@
+{
+  "model_generators": [
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "name": "toString"
+        },
+        {
+          "constraint": "signature",
+          "pattern": "\\(\\)Ljava/lang/String;"
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(*).*", "output": "Return" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "name": "toString",
+          "parents": [
+            "Ljava/lang/String;",
+            "Ljava/lang/StringBuffer;",
+            "Ljava/lang/StringBuilder;"
+          ]
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(0)", "output": "Return" },
+          { "input": "Argument(0).*", "output": "Return" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "name": "append",
+          "parents": [
+            "Ljava/lang/StringBuffer;",
+            "Ljava/lang/StringBuilder;"
+          ]
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(0)", "output": "Return" },
+          { "input": "Argument(0)", "output": "Argument(0)" },
+          { "input": "Argument(1)", "output": "Return" },
+          { "input": "Argument(1)", "output": "Argument(0)" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "name": "valueOf",
+          "parents": [
+            "Ljava/lang/Character;",
+            "Ljava/lang/String;",
+            "Ljava/lang/Boolean;",
+            "Ljava/lang/Byte;",
+            "Ljava/lang/Short;",
+            "Ljava/lang/Integer;",
+            "Ljava/lang/Long;",
+            "Ljava/lang/Float;",
+            "Ljava/lang/Double;",
+            "Ljava/lang/BigInteger;"
+          ]
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(*)", "output": "Return" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "name": "forDigit",
+          "parents": [
+            "Ljava/lang/Character;"
+          ]
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(*)", "output": "Return" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "name": "booleanValue",
+          "parent": "Ljava/lang/Boolean;"
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(0)", "output": "Return" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "name": "readLine",
+          "parent": "Ljava/io/BufferedReader;"
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(0).*", "output": "Return" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "name": "ordinal",
+          "parent": "Ljava/lang/Enum;"
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(0).*", "output": "Return" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "getBytes",
+            "indexOf",
+            "isEmpty",
+            "lastIndexOf",
+            "replace",
+            "split",
+            "subSequence",
+            "toCharArray",
+            "charAt",
+            "indexOf",
+            "subSequence"
+          ],
+          "parents": [
+            "Ljava/lang/String;",
+            "Ljava/lang/StringBuffer;",
+            "Ljava/lang/StringBuilder;"
+          ]
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(0).*", "output": "Return" },
+          { "input": "Argument(0)", "output": "Return.*" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "name": "insert",
+          "parents": [
+            "Ljava/lang/StringBuilder;"
+          ]
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(1)", "output": "Return.*" },
+          { "input": "Argument(1)", "output": "Argument(0).*" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "substring",
+            "toLowerCase",
+            "toUpperCase",
+            "trim"
+          ],
+          "parent": "Ljava/lang/String;"
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(0)", "output": "Return" },
+          { "input": "Argument(0).*", "output": "Return" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [ "getOutputStream" ],
+          "parent": "Ljava/net/HttpURLConnection;"
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(0).*", "output": "Return" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [ "getAddress" ],
+          "parent": "Ljava/net/InetAddress;"
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(0).*", "output": "Return" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "name": "openConnection",
+          "parent": "Ljava/net/URL;"
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(0).*", "output": "Return" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [ "getString" ],
+          "parent": "Lorg/json/JSONObject;"
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(0).*", "output": "Return" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "name": "iterator",
+          "parents": [
+            "Ljava/util/ArrayList;"
+          ]
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(0).*", "output": "Return" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "name": "next",
+          "parent": "Ljava/util/Iterator;"
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(0).*", "output": "Return" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "name": "toJson",
+          "parent": "Lcom/android/ad/du/DuAdData;"
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(0).*", "output": "Return" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "getAbsolutePath",
+            "getAbsoluteFile",
+            "getCanonicalFile",
+            "getName",
+            "getParentFile",
+            "getPath"
+          ],
+          "parent": "Ljava/io/File;"
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(0).*", "output": "Return" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "read"
+          ],
+          "parents": [
+            "Ljava/io/ByteArrayInputStream;",
+            "Ljava/io/BufferedInputStream;",
+            "Ljava/io/FileInputStream;",
+            "Ljava/io/InputStream;",
+            "Ljava/io/RandomAccessFile;"
+          ]
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(0).*", "output": "Argument(1)" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "write",
+            "writeBoolean",
+            "writeByte",
+            "writeBytes",
+            "writeChars",
+            "writeChar",
+            "writeDouble",
+            "writeFloat",
+            "writeInt",
+            "writeLong",
+            "writeShort",
+            "writeUTF"
+          ],
+          "parents": [
+            "Ljava/io/RandomAccessFile;",
+            "Ljava/io/OutputStream;",
+            "Ljava/io/FilterOutputStream;",
+            "Ljava/io/BufferedOutputStream;",
+            "Ljava/io/DataOutputStream;",
+            "Ljava/io/ByteArrayOutputStream;",
+            "Ljava/io/PipedOutputStream;"
+          ]
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(1)", "output": "Argument(0).*" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "name": "add",
+          "parent": "Ljava/util/ArrayList;"
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(1)", "output": "Argument(0)" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "name": "<init>",
+          "parents": [
+            "Ljava/io/BufferedReader;",
+            "Ljava/io/ByteArrayInputStream;",
+            "Ljava/io/DataOutputStream;",
+            "Ljava/io/File;",
+            "Ljava/io/FileInputStream;",
+            "Ljava/io/InputStreamReader;",
+            "Ljava/lang/String;",
+            "Ljava/lang/StringBuilder;",
+            "Ljavax/activation/DataHandler;",
+            "Ljava/net/URL;",
+            "Ljava/lang/Integer;",
+            "Ljava/lang/Short;",
+            "Ljava/lang/Long;",
+            "Ljava/lang/Byte;",
+            "Ljava/lang/Float;",
+            "Ljava/lang/Double;"
+          ]
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(0)", "output": "Return" },
+          { "input": "Argument(0)", "output": "Return.*" },
+          { "input": "Argument(0).*", "output": "Return.*" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "name": "<init>",
+          "parents": [
+            "Ljava/io/BufferedReader;",
+            "Ljava/io/ByteArrayInputStream;",
+            "Ljava/io/ObjectInputStream;"
+          ]
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(1)", "output": "Argument(0)" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "name": "<init>",
+          "parents": [
+            "Ljava/io/ObjectOutputStream;"
+          ]
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(0)", "output": "Argument(*)" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "name": "normalize",
+          "parent": "Ljava/text/Normalizer;"
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(0)", "output": "Return" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "parseByte",
+            "parseShort",
+            "parseInt",
+            "parseLong",
+            "parseFloat",
+            "parseDouble",
+            "toHexString",
+            "toBinaryString",
+            "toOctalString"
+          ],
+          "parents": [
+            "Ljava/lang/Byte;",
+            "Ljava/lang/Short;",
+            "Ljava/lang/Integer;",
+            "Ljava/lang/Long;",
+            "Ljava/lang/Float;",
+            "Ljava/lang/Double;"
+          ]
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(*)", "output": "Return" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "highestOneBit",
+            "numberOfTrailingZeros",
+            "parseLong"
+          ],
+          "parent": "Ljava/lang/Long;"
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(0)", "output": "Return" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "min",
+            "max"
+          ],
+          "parents": [
+            "Ljava/lang/Math;",
+            "Ljava/lang/Byte;",
+            "Ljava/lang/Short;",
+            "Ljava/lang/Integer;",
+            "Ljava/lang/Long;",
+            "Ljava/lang/Float;",
+            "Ljava/lang/Double;"
+          ]
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(0)", "output": "Return" },
+          { "input": "Argument(1)", "output": "Return" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "format",
+            "concat",
+            "replaceAll",
+            "replace"
+          ],
+          "parent": "Ljava/lang/String;"
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(*)", "output": "Return" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "name": "toASCII",
+          "parent": "Ljava/net/IDN;"
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(0)", "output": "Return" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "name": "arraycopy",
+          "parent": "Ljava/lang/System;"
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(0)", "output": "Argument(2)" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "name": "execute"
+        },
+        {
+          "constraint": "signature_pattern",
+          "pattern": "\\(\\[Ljava/lang/Object;\\)Landroid/os/AsyncTask;"
+        }
+      ],
+      "model": {
+        "forward_self": {
+          "where": [
+            {
+              "constraint": "signature_match",
+              "name": "doInBackground"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "add",
+            "and",
+            "andNot",
+            "divide",
+            "divideAndRemainder",
+            "gcd",
+            "max",
+            "min",
+            "mod",
+            "modInverse",
+            "modPow",
+            "multiply",
+            "or",
+            "xor"
+          ],
+          "parent": "Ljava/lang/BigInteger;"
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(*)", "output": "Return" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "add"
+          ],
+          "parents": [
+            "Ljava/util/Collection;",
+            "Ljava/util/LinkedList;",
+            "Ljava/util/ArrayList;",
+            "Ljava/util/Vector;"
+          ]
+        },
+        {
+          "constraint": "signature",
+          "pattern": "^\\(L.*"
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(1)", "output": "Argument(0).*" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "name": "obtain",
+          "parent": "Landroid/os/Message;"
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(*)", "output": "Return" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "name": "create",
+          "parent": "Ljava/net/URI;"
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(*)", "output": "Return" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "addFlags",
+            "setFlags",
+            "parseIntent",
+            "parseUri"
+          ],
+          "parent": "Landroid/content/Intent;"
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(2)", "output": "Argument(0).*" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "asList",
+            "copyOf"
+          ],
+          "parent": "Ljava/util/Arrays;"
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(2)", "output": "Argument(0).*" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "toString"
+          ],
+          "parent": "Ljava/util/Arrays;"
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(0)", "output": "Return" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "put",
+            "putChar",
+            "putDouble",
+            "putFloat",
+            "putInt",
+            "putLong",
+            "putShort"
+          ],
+          "parent": "Ljava/nio/ByteBuffer;"
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(*)", "output": "Return" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "name": "unmarshall",
+          "parent": "Landroid/os/Parcel;"
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(0).*", "output": "Return" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "name": "createFromPdu",
+          "parents": [
+            "Landroid/telephony/SmsMessage;",
+            "Landroid/telephony/gsm/SmsMessage;"
+          ]
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(*)", "output": "Return" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "name": "toByteArray",
+          "parents": [
+            "Ljava/io/ByteArrayOutputStream;"
+          ]
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(*)", "output": "Return" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "name": "matcher",
+          "parents": [
+            "Ljava/util/regex/Pattern;"
+          ]
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(*)", "output": "Return" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "name": "equalsIgnoreCase",
+          "parents": [
+            "Ljava/lang/String;"
+          ]
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(0)", "output": "Return" },
+          { "input": "Argument(1)", "output": "Return" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "name": "getExtras",
+          "parents": [
+            "Landroid/content/Intent;"
+          ]
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(0)", "output": "Return" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_pattern",
+          "pattern": "get.*"
+        },
+        {
+          "constraint": "signature_match",
+          "parents": [
+            "Landroid/os/Bundle;"
+          ]
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(*)", "output": "Return" }
+        ]
+      }
+    }
+  ]
+}

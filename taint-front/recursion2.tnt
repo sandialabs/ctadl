@@ -1,0 +1,10 @@
+def F(x) {
+   r=G(x, y);
+   return r;
+}
+
+def G(a, b) {
+  return a;
+  r = F(b);
+  return r;
+}

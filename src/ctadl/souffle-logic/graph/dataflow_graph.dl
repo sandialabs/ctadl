@@ -1,0 +1,34 @@
+#pragma once
+
+#include "ctadl_schema.dl"
+
+// ---------------------------------------------------------------------------
+
+#include "graph/declarations.dl"
+#include "graph/access_path.dl"
+
+// These access paths are important for correctness.
+CisAccessPath("").
+CisAccessPath(STAR).
+
+isComputedAccessPath(ap) :- CisAccessPath(ap).
+
+// Imports CTADL IR from DB instead of, perhaps, a language frontend.
+#ifdef CTADL_IMPORT_IR_FROM_DB
+#include "imports.dl"
+#endif
+
+// Imports dataflow graph from DB so we can run new rules on top of it.
+#ifdef CTADL_IMPORT_GRAPH_FROM_DB
+#include "graph/import.dl"
+#endif
+
+
+.comp CGraphRules {
+#include "graph/dataflow.dl"
+#include "graph/callgraph.dl"
+}
+
+#ifndef CTADL_GRAPH_DISABLE_OUTPUT_FACTS
+#include <graph/export.dl>
+#endif

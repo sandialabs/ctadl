@@ -1,0 +1,17 @@
+/tags
+__pycache__
+*.db
+.DS_Store
+/_build
+/out*/
+/profiler_html
+.direnv
+.envrc
+lib/*
+!.gitkeep
+.cache/
+*.dylib
+*~
+*.sarif
+*.csv
+

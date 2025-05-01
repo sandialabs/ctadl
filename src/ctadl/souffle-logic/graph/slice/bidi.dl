@@ -1,0 +1,187 @@
+#include "graph/slice/declarations.dl"
+
+// this forward slice and the forward slice with suspicion need to have the
+// same signature. but this one doesn't adjust suspicion in any way. this slice
+// can be used to track how allocations/function pointers flow around the
+// program without the complication of needing to deal with adjusting suspicion
+// based on traversed edges.
+
+// ---------------------------------------------------------------------------
+// macros
+
+// by default, we assume that VirtualAssign is recursive. So the default plan
+// will prioritize it for deltas.
+#ifndef FS_VirtualAssignPlan
+#define FS_VirtualAssignPlan .plan 1: (2, 1, 3)
+#endif
+
+#ifndef SB_CallFlowEdgePlan
+#define SB_CallFlowEdgePlan .plan 1: (2, 1, 3, 4)
+#endif
+
+#ifndef FS_VertexInline
+#define FS_VertexInline
+#endif
+
+#ifndef FS_VirtualAssignInline
+#define FS_VirtualAssignInline
+#endif
+
+#ifndef FS_ActualToFormalPlan
+#define FS_ActualToFormalPlan
+#endif
+
+#ifndef FS_FormalToActualPlan
+#define FS_FormalToActualPlan
+#endif
+.comp SliceTaint {
+
+// ---------------------------------------------------------------------------
+// inputs
+
+.comp Input {
+    // computes flows from root vertex
+    .decl StartVertex(v: CVar, p: CAccessPath, t: SliceLabelType) inline
+    .decl SanitizeAssign(
+        v1: CVar, p1: CAccessPath, v2: CVar, p2: CAccessPath, t: SliceLabelType
+    )
+    .decl SanitizeVertex(
+        v: CVar, p: CAccessPath, t: SliceLabelType
+    )
+    // set at most one of these
+    .decl SliceForward()
+    .decl SliceBackward()
+}
+
+.init input_ = Input
+
+
+// these are input-output relations. Vertices and Assigns may be added during slicing.
+.decl Vertex(v: CVar, p: CAccessPath) FS_VertexInline
+.decl VirtualAssign(
+    s: CInsn,
+    v1: CVar, p1: CAccessPath, v2: CVar, p2: CAccessPath,
+    reason: symbol,
+    ctx: symbol
+) FS_VirtualAssignInline
+
+#include <taint_schema.dl>
+
+.decl isReachable(v: CVar, p: CAccessPath, label: SliceLabelType)
+
+isReachable(v, p, label) :- ReachableVertex(_, v, p, label, _, _, _).
+
+#define ReachableVertexId(dir, v, p, label, call_state, ctx) \
+    ord(cat(dir, ":", v, ":", p, ":", label, ":", call_state, ":", ctx))
+#define Direction(dir) \
+    (input_.SliceForward(), dir = "fw"; input_.SliceBackward(), dir = "bw")
+
+Vertex(var, ap),
+ReachableVertex(id, var, ap, label, cstate, sus, "") :-
+    input_.StartVertex(var, ap, label),
+    MatchStart(cstate),
+    sus = 0,
+    Direction(dir),
+    id = ReachableVertexId(dir, var, ap, label, cstate, "").
+
+// reachable across intraprocedural edge
+ReachableEdge(vertex_to, vertex_from, insn, "move"),
+ReachableVertex(vertex_to, v1, p1, label, cs, sus, ctx0) :-
+    ReachableVertex(vertex_from, v2, p2, label, cs, sus, ctx1),
+    VirtualAssign(insn, v1, p1, v2, p2, _, ctx2),
+    !input_.SanitizeAssign(v1, p1, v2, p2, label),
+    !input_.SanitizeVertex(v2, p2, label),
+    call_string_taint_constraint(ctx0, ctx1, ctx2),
+    Direction(dir),
+    vertex_to = ReachableVertexId(dir, v1, p1, label, cs, ctx0).
+FS_VirtualAssignPlan
+
+// propagate vertex to caller/callee because this increases precision for tainted things.
+Vertex(v_to, p_to),
+ReachableEdge(vertex_to, vertex_from, call, direction),
+ReachableVertex(vertex_to, v_to, p_to, label, cs_to, sus, ctx0) :-
+    ReachableVertex(vertex_from, v_from, p_from, label, cs_from, sus, ctx1),
+    CallFlowEdge(call, v_to, p_to, v_from, p_from, ctx2, direction),
+    !input_.SanitizeAssign(v_to, p_to, v_from, p_from, label),
+    !input_.SanitizeVertex(v_from, p_from, label),
+    MatchNext(cs_from, direction, cs_to),
+    call_string_taint_constraint(ctx0, ctx1, ctx2),
+    Direction(dir),
+    vertex_to = ReachableVertexId(dir, v_to, p_to, label, cs_to, ctx0).
+SB_CallFlowEdgePlan
+
+// an edge between the vertices of caller and callee, created because at least
+// one vertex is tainted
+.decl CallFlowEdge(
+    insn: CInsn, dst_var: CVar, dst_path: CAccessPath, src_var: CVar, src_path: CAccessPath,
+    ctx: symbol, direction: symbol
+)
+
+// call flow edge enabled by reachable(actual_param)
+CallFlowEdge(call, v1, p_suffix, v2, p_tainted, ctx2, "actual-to-formal") :-
+    ReachableVertex(_, v2, p_tainted, _, _, _, _),
+    CCall_ActualParam(call, n, v2, p_actual),
+    CallEdge(call, id, ctx2),
+    (   input_.SliceForward()
+    ;   input_.SliceBackward(), CFunction_isFormalParamByRef(id, n)),
+    MatchComputedPrefix(p_tainted, p_actual, p_suffix),
+    CFunction_FormalParam(id, n, v1).
+FS_ActualToFormalPlan
+
+// call flow edge enable by reachable(formal_param)
+CallFlowEdge(call, v1, p1, v2, p_tainted, ctx2, "formal-to-actual") :-
+    ReachableVertex(_, v2, p_tainted, _, _, _, _),
+    CFunction_FormalParam(id, n, v2),
+    (   input_.SliceBackward()
+    ;   input_.SliceForward(), CFunction_isFormalParamByRef(id, n)),
+    CallEdge(call, id, ctx2),
+    CCall_ActualParam(call, n, v1, p_actual),
+    MatchComputedPrefix(p1, p_actual, p_tainted).
+FS_FormalToActualPlan
+
+
+// Our taint analysis needs to return only paths that obey the call-return
+// stack discipline. In a compositional analysis, this can be accomplished by
+// keeping track, for each reachable vertex, of an extra bit of state that is
+// either "free" or "restricted." A source vertex is "free." If a vertex is
+// reached when going from a call site to the formal of a callee, the formal
+// becomes "restricted." A restricted vertex, intuitively, is one that cannot
+// propagate taint back up the call stack. Only free vertices can taint from a
+// return value inside a function to a call site.
+
+.decl MatchStart(start: symbol)
+
+// matchnext just needs to know the direction of the flow -- from formal to
+// actual or actual to formal -- to figure out how to match parens.
+// prev - the state of the existing tainted object
+// next - the state of the newly tainted object
+
+// in forward slice:
+// - formal-to-actual does a "return", which leaves us unrestricted
+// - actual-to-formal does a "call", which means we can only do calls in future
+
+// in backward slice
+// - formal-to-actual does a "call", which leaves us unrestricted
+// - actual-to-formal does a "return", which means we can only do returns in future
+.decl MatchNext(prev: symbol, direction: symbol, next: symbol)
+
+MatchStart("free").
+MatchNext(prev, direction, next) :-
+    prev = "free", direction = "formal-to-actual", next = "free";
+    prev = "free", direction = "actual-to-formal", next = "restricted";
+    prev = "restricted", direction = "actual-to-formal", next = "restricted".
+
+#ifdef ALL_OUTPUTS
+//.output SlicedActual(CTADL_OUTPUT_DB_IO)
+//.output SlicedFormal(CTADL_OUTPUT_DB_IO)
+.output CallFlowEdge(CTADL_OUTPUT_DB_IO)
+#endif
+
+CTADLError(msg) :-
+    ReachableVertex(_, v, p, _, _, _, _),
+    p = "",
+    CFunction_FormalParam(f, n, v),
+    CGlobalParameter(n),
+    msg = cat("tainted <globals> without field: ",v).
+
+}

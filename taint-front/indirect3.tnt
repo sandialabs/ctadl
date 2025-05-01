@@ -1,0 +1,14 @@
+def f() {
+  fret = source(Network);
+  return fret;
+}
+
+def g(p) {
+  p.func = f;
+}
+
+def Main() {
+  g(c);
+  x = c.func();
+  sink(x, Network);
+}

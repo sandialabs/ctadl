@@ -1,0 +1,14 @@
+// core taint results
+.output TaintSourceVertex(CTADL_OUTPUT_DB_IO)
+.output LeakingSinkVertex(CTADL_OUTPUT_DB_IO)
+.output TaintSanitizeEdge(CTADL_OUTPUT_DB_IO)
+.output TaintSanitizeVertex(CTADL_OUTPUT_DB_IO)
+.output forward_flow.ReachableVertex(CTADL_OUTPUT_DB_IO)
+.output forward_flow.ReachableEdge(CTADL_OUTPUT_DB_IO)
+.output backward_flow.ReachableVertex(CTADL_OUTPUT_DB_IO)
+.output backward_flow.ReachableEdge(CTADL_OUTPUT_DB_IO)
+.output isTaintedArgUnmodeled(CTADL_OUTPUT_DB_IO)
+.output CTADLStats(CTADL_OUTPUT_DB_IO)
+
+// program relations that are affected by taint computation
+.output IntCInsn_InFunction(CTADL_OUTPUT_DB_IO)

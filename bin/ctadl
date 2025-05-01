@@ -1,0 +1,2307 @@
+#!/usr/bin/env python3
+
+# XXX simplify globals strategy
+
+# D100
+# The new behavior is that you pass a datalog fragment to --dl and CTADL
+# appends it to the appropriate indexer before compiling. The old query
+# behavior was that you could pass a standalone .dl file and CTADL would run
+# it. We are deprecating this, but Ghidra in the meantime still depends on it.
+# So we're supporting it right now. I've commented the code that supports this
+# feature with D100 so it can be explained here.
+
+import argparse
+import contextlib
+import datetime
+import hashlib
+import importlib
+import importlib.resources as resources
+import logging
+import os
+import os.path
+import pkgutil
+import platform
+import random
+import resource
+import shlex
+import shutil
+import sqlite3
+import subprocess
+import sys
+import tempfile
+import textwrap
+import time
+from argparse import Namespace
+from collections import defaultdict
+from itertools import chain, groupby
+from pathlib import Path
+from pprint import pformat
+from typing import Iterable, Literal, NoReturn, Optional, Union, cast
+
+import ctadl
+import ctadl.util.diff
+import ctadl.vis
+import ctadl.vis.formatters
+from ctadl import DatalogSource, advise, analysisdir, error, status, status_isatty, warn
+from ctadl.models import JSONTranslator
+from ctadl.util.functions import pluralize, writer
+from ctadl.vis import model
+from ctadl.vis.model import ColumnSpec, execute
+
+try:
+    import pyjson5 as json
+except ImportError:
+    import json
+
+try:
+    import pyjson5 as json
+except ImportError:
+    import json
+
+
+logger = logging.getLogger(__name__)
+
+ctx_stack = contextlib.ExitStack()
+
+discovered_plugins = {
+    name: importlib.import_module(name)
+    for finder, name, ispkg in pkgutil.iter_modules()
+    if name.startswith("ctadl_")
+}
+import_plugins = {
+    name: mod
+    for name, mod in discovered_plugins.items()
+    if getattr(mod, "language", [])
+}
+export_plugins = {
+    name: mod
+    for name, mod in discovered_plugins.items()
+    if getattr(mod, "export_formats", None)
+}
+compiled_indexers = {}
+compiled_query = None
+default_queries = {}
+compiled_match = None
+
+
+def error_issue_message():
+    error("Please file a Github issue (https://github.com/sandialabs/ctadl/issues)")
+    exit(1)
+
+
+def get_default_jobs():
+    default_jobs = 1
+    try:
+        cpu_count = len(os.sched_getaffinity(0))  # type: ignore
+    except AttributeError:
+        cpu_count = os.cpu_count()
+    if cpu_count is not None:
+        default_jobs = cpu_count // 2
+    return default_jobs
+
+
+def nonnegative_int(k):
+    k = int(k)
+    if k >= 0:
+        return k
+    raise ValueError("integer negative")
+
+
+def chdir(dir: Path):
+    fulldir = dir.resolve()
+    status(f"changing working directory to '{str(fulldir)}'", verb=1)
+    os.chdir(fulldir)
+
+
+def set_directory_option(args):
+    setting = "--directory"
+    if args.directory is None:
+        defaultdir = os.getenv("CTADL_DEFAULT_DIRECTORY")
+        if not defaultdir:
+            return
+        status(
+            f"picked up CTADL_DEFAULT_DIRECTORY: '{defaultdir}'",
+        )
+        setting = "CTADL_DEFAULT_DIRECTORY"
+        args.directory = Path(defaultdir)
+    path = str(args.directory)
+    if not os.path.exists(path):
+        logging.debug("creating %s", path)
+        os.makedirs(path)
+    if not args.directory.is_dir():
+        error(f"error: {setting} is not a directory: '{args.directory}'")
+        exit(1)
+
+
+hybrid_inlining_default_context_bound = 3
+hybrid_inlining_default_inlining_bound = 5
+dynamic_access_paths_default_max_length = 0
+print_resource_interval_s = 11 + random.random()
+
+
+# ---------------------------------------------------------------------------
+
+
+def get_memory_info(*, pid: Optional[int], retcode: Optional[int] = None) -> str:
+    if retcode is not None:
+        factor = 1024 * 1024 * (1024 if platform.system() == "Darwin" else 1)
+        rusage = resource.getrusage(resource.RUSAGE_CHILDREN)
+        mem = rusage.ru_maxrss / factor
+        memfmt = f" | max rss: {mem:.2f} GiB"
+        return memfmt
+    if pid is None:
+        return ""
+    try:
+        factor = 1024 * 1024 * 1024
+        import psutil
+
+        try:
+            souffle_process = psutil.Process(pid)
+            mem = souffle_process.memory_info().rss / factor
+            memfmt = f" | rss: {mem:.2f} GiB"
+            return memfmt
+        except psutil.NoSuchProcess:
+            return ""
+    except ImportError:
+        pass
+    return ""
+
+
+def print_resource_usage(
+    name,
+    start_time,
+    pid: Optional[int] = None,
+    retcode: Optional[int] = None,
+    clearchars=0,
+    end: str = "",
+    verb: int = 0,
+) -> int:
+    """Prints a single line of resource usage
+
+    Optional arguments:
+    - pid: Used to query for memory usage
+    - retcode: If process has terminated, the return code
+    - clearchars: If positive, uses a carriage return and prints this many
+      spaces to clear the current line befor printing status
+    - end: String to print at the end of the line
+    """
+
+    if not status_isatty():
+        return 0
+    try:
+        m1, m5, m15 = os.getloadavg()
+        delta = time.time() - start_time
+        memfmt = get_memory_info(pid=pid, retcode=retcode)
+        retfmt = ("[" + str(retcode) + "]") if retcode is not None else ""
+        prefix = ".. " if retcode is None else ""
+        namefmt = name if len(name) < 10 else f"{name[:10]}..."
+        s = f"{prefix}{namefmt}{retfmt}>> [{delta:.2f}s] load avg: {m1:.2f} {m5:.2f} {m15:.2f}{memfmt}"
+        if clearchars > 0:
+            status(" " * clearchars, prefix="\r", end="", flush=True, verb=verb)
+        return status(s, prefix="\r", end=end, flush=True, verb=verb)
+    except OSError:
+        return 0
+
+
+def collect_macros(args) -> list[Union[tuple[str, str], str]]:
+    logger.debug("collecting macros...")
+    macros = list(getattr(args, "macro", []))
+    macros.append(("CTADL_VERSION", ctadl.__version__))
+    if "output_index" in args and args.output_index:
+        macros.append(("CTADL_OUTPUT_DB", args.output_index))
+    if "input_index" in args and args.input_index:
+        macros.append(("CTADL_INPUT_DB", args.input_index))
+    if "cha" in args and args.cha:
+        macros.append("CTADL_ENABLE_CHA")
+    if "star" in args and args.star:
+        macros.append("CTADL_ENABLE_STAR")
+    if "match_star_fields" in args and args.match_star_fields:
+        macros.append("CTADL_ENABLE_MATCH_ACCESS_PATHS_TO_STAR")
+    if "propagate_global_fields" in args and args.propagate_global_fields:
+        macros.append("CTADL_ENABLE_GLOBAL_FIELD_PROPAGATION")
+    if "all_ap_splits" in args and args.all_ap_splits:
+        macros.append("CTADL_USE_PREFIX_TABLE")
+    if "globals_strategy" in args:
+        if "ignore" == args.globals_strategy:
+            macros.append("CTADL_NO_GLOBAL_SUMMARIES")
+        elif "fastsummary" == args.globals_strategy:
+            pass
+        elif "param" == args.globals_strategy:
+            macros.append("CTADL_USE_GLOBAL_PARAM")
+            macros.append("CTADL_NO_GLOBAL_SUMMARIES")
+    if "global_summaries" in args and not args.global_summaries:
+        macros.append("CTADL_NO_GLOBAL_SUMMARIES")
+    if "all_outputs" in args and args.all_outputs:
+        macros.append("ALL_OUTPUTS")
+    if (
+        "pcode_indirect_call_resolution" in args
+        and not args.pcode_indirect_call_resolution
+    ):
+        macros.append("CTADL_PCODE_DISABLE_INDIRECT_CALL_RESOLUTION")
+    return macros
+
+
+# This class centralizes how we handle subprocess exit codes so that by default
+# we always report an error and the process output if some subprocess doesn't
+# return 0. It also makes it possible to ignore errors, if desired.
+class CommandFailure(Exception):
+    """Exception raised when Commands return a non-zero exit code"""
+
+    completion: subprocess.CompletedProcess
+
+    def __init__(self, name: str, completion: subprocess.CompletedProcess):
+        self.name = name
+        self.completion = completion
+
+    def display_capture_and_exit(self) -> NoReturn:
+        """Prints captured stdout/stderr and exits with the stored exit code"""
+        res = self.completion
+        assert res.returncode != 0
+        if res.stdout is not None or res.stderr is not None:
+            out = res.stdout.decode("utf-8") if res.stdout is not None else ""
+            err = res.stderr.decode("utf-8") if res.stderr is not None else ""
+            error(f"subprocess stdout: {out}")
+            error(f"subprocess stderr: {err}")
+        error(f"error: {self.name} exited with code: {res.returncode}")
+        exit(res.returncode)
+
+
+class Command:
+    """Represents an incrementally built, one-shot command line to run in the shell
+
+    Adds ability to capture the output into strings and to monitor the
+    resources used by the subprocess
+
+    c = Command("ls")
+    c.add_arg("-l")
+    try:
+        completed_process = c.run()
+        # return code is 0
+    except CommandFailure as fail:
+        # return code is not 0
+    """
+
+    def __init__(self, name):
+        """Initialize
+
+        - name: Program to run (relative or absolute)"""
+        self._name = name
+        self._args = []
+
+    def set_name(self, name):
+        self._name = name
+
+    def add_arg(self, arg: str):
+        self._args.append(arg)
+
+    def add_args(self, args: Iterable[str]):
+        self._args.extend(args)
+
+    def run(self, capture_output=True) -> subprocess.CompletedProcess:
+        """Runs the process. Returns subprocess.CompletedProcess on success
+        (exit code 0) and raises CommandFailure exception otherwise"""
+
+        cmd = [self._name] + self._args
+
+        def quoted_str(s):
+            return f"'{s}'"
+
+        kwargs = {}
+        if capture_output:
+            if kwargs.get("stdout") is not None or kwargs.get("stderr") is not None:
+                raise ValueError(
+                    "stdout and stderr arguments may not be used "
+                    "with capture_output."
+                )
+            kwargs["stdout"] = subprocess.PIPE
+            kwargs["stderr"] = subprocess.PIPE
+
+        logging.info("command: %s", " ".join(map(quoted_str, cmd)))
+        logger.debug("subprocess.run: %s", list(map(quoted_str, cmd)))
+        start_time = time.time()
+        res = self._spawn(cmd, start_time, **kwargs)
+        if res.returncode != 0:
+            raise CommandFailure(self._name, res)
+        return res
+
+    def _spawn(self, cmd, start_time, **kwargs) -> subprocess.CompletedProcess:
+        name = Path(cmd[0]).name
+        with subprocess.Popen(cmd, **kwargs) as process:
+            clearchars = 0
+            try:
+                while True:
+                    try:
+                        process.wait(timeout=print_resource_interval_s)
+                        break
+                    except subprocess.TimeoutExpired:
+                        clearchars = print_resource_usage(
+                            name, start_time, pid=process.pid, clearchars=clearchars
+                        )
+                stdout, stderr = cast(tuple[bytes, bytes], process.communicate(None))
+            except:
+                process.kill()
+                # We don't call process.wait() as .__exit__ does that for us.
+                raise
+            retcode = process.poll()
+            assert retcode is not None
+            print_resource_usage(
+                name, start_time, end="\n", retcode=retcode, clearchars=clearchars
+            )
+        return subprocess.CompletedProcess(process.args, retcode, stdout, stderr)
+
+
+class AnySouffleCommand(Command):
+    def __init__(self, name="souffle"):
+        super().__init__(name)
+        self._includes = ["-I", str(resources.files(ctadl) / "souffle-logic")]
+
+    def config_libdir(self):
+        for d in [analysisdir]:
+            self.add_args(["-L", str(d)])
+
+    def config_macros(self, args):
+        """Adds macro definitions"""
+        self.add_args(self._includes)
+        self.add_args(args.souffle_arg)
+
+        self.add_macro_args(args)
+
+        self.add_args(["-j", str(args.jobs)])
+        self.config_libdir()
+
+    def add_macro_args(self, args):
+        """Adds macros in the -Mkey1=val2 key2=val2 format"""
+
+        def format(m):
+            if isinstance(m, str):
+                return m
+            else:
+                key, val = m
+                return f"{key}={val}"
+
+        self.add_args(["-M", " ".join(format(m) for m in collect_macros(args))])
+
+
+class PreprocessCommand(AnySouffleCommand):
+    def config_macros(self, args):
+        self.add_args(self._includes)
+        self.add_args(args.preprocessor_arg)
+        self.add_macro_args(args)
+
+    def add_macro_args(self, args):
+        """Adds macros in the -Dkey=value format"""
+
+        def format(m):
+            if isinstance(m, str):
+                return f"-D{m}"
+            else:
+                key, val = m
+                return f"-D{key}={val}"
+
+        for m in collect_macros(args):
+            self.add_arg(format(m))
+
+
+class SouffleCompileCommand(AnySouffleCommand):
+    def __init__(self, path):
+        super().__init__(path)
+
+    def compile(self, dl_file, output_file, args) -> subprocess.CompletedProcess:
+        self.config_macros(args)
+        self.add_args([dl_file, "-o", output_file])
+        return self.run(capture_output=(ctadl.verbosity <= 0 or args.quiet))
+
+
+class SouffleCommand(AnySouffleCommand):
+    def analyze(self, fact_dir, out_dir, args):
+        self.config_libdir()
+
+        if ctadl.is_verbosity_enabled_for(2):
+            self.add_arg("-v")
+
+        self.add_args(["-j", str(args.jobs)])
+        if fact_dir:
+            self.add_args(["-F", str(fact_dir)])
+
+        return self.run(capture_output=(ctadl.verbosity <= 0 or args.quiet))
+
+
+class SouffleCompiledAnalysis(AnySouffleCommand):
+    def analyze(self, fact_dir, out_dir, args) -> subprocess.CompletedProcess:
+        self.add_args(["-j", str(args.jobs)])
+        if fact_dir:
+            self.add_args(["-F", str(fact_dir)])
+        return self.run(capture_output=(ctadl.verbosity <= 0 or args.quiet))
+
+
+def write_analyzer_config(args: Namespace, facts: model.Facts):
+    features = {}
+    features["CTADL_ENABLE_STAR"] = 1 if "star" in args and args.star else 0
+    features["CTADL_ENABLE_MATCH_ACCESS_PATHS_TO_STAR"] = int(
+        getattr(args, "match_star_fields", False)
+    )
+    features["CTADL_ENABLE_CHA"] = 1 if "cha" in args and args.cha else 0
+    features["CTADL_ENABLE_HYBRID_INLINING"] = int(
+        getattr(args, "hybrid_inlining", False)
+    )
+    features["CTADL_ENABLE_CONTEXT_FREE_OBJECT_TRACKING"] = int(
+        getattr(args, "object_tracking", False)
+    )
+    features["CTADL_ENABLE_HYBRID_INLINING_K_CONTEXT_SENSITIVITY"] = int(
+        bool(getattr(args, "hybrid_inlining_context_bound", False) or False)
+    )
+    features["CTADL_HYBRID_INLINING_K_CONTEXT_SIZE"] = int(
+        getattr(
+            args,
+            "hybrid_inlining_context_bound",
+            hybrid_inlining_default_context_bound,
+        )
+        or hybrid_inlining_default_context_bound
+    )
+    b = getattr(args, "hybrid_inlining_inlining_bound", None)
+    features["CTADL_ENABLE_HYBRID_INLINING_K_INLINING_SENSITIVITY"] = (
+        0 if b is None else 1
+    )
+    features["CTADL_HYBRID_INLINING_K_INLINING_SIZE"] = (
+        hybrid_inlining_default_inlining_bound if b is None else b
+    )
+    features["CTADL_HYBRID_INLINING_ADD_PARTHIANS_TO_VERTEX"] = int(
+        getattr(args, "hybrid_inlining_add_parthians_to_vertex", False)
+    )
+    features["CTADL_DISABLE_GLOBAL_DATA_FLOW"] = int(
+        not getattr(args, "interprocedural_data_flow", True)
+    )
+    features["CTADL_DYNAMIC_ACCESS_PATHS_MAX_LENGTH"] = int(
+        getattr(args, "dynamic_access_paths_max_length", 0)
+    )
+    facts.add_input_relation(
+        "CTADLConfig_Input",
+        [
+            ColumnSpec("feature", "TEXT NOT NULL"),
+            ColumnSpec("value", "TEXT NOT_NULL"),
+        ],
+    )
+    with facts.writer() as writer:
+        for feature, value in features.items():
+            facts.write(writer, "CTADLConfig_Input", feature, value)
+            # print(f"{feature}\t{value}", file=fp)
+
+
+def detect_import_language(args: Namespace) -> str:
+    """Finds import language and sets args.importdir to point at facts"""
+    global ctx_stack
+
+    import_path = Path(args.importdir).resolve()
+    status(f"SUT import: '{import_path}'", verb=1)
+
+    language: Optional[str] = None
+    language_facts_file = Path(import_path) / "CTADLLanguage.facts"
+    if not language_facts_file.exists():
+        logger.info(f"no language facts file at '{language_facts_file}'")
+        language_facts_file = Path(import_path) / "facts" / "CTADLLanguage.facts"
+    if not language_facts_file.exists():
+        logger.info(f"no language facts file at '{language_facts_file}'")
+        error(
+            f"could not find language facts file in import '{import_path}'",
+            remediations="verify that 'import' succeeded",
+        )
+        exit(1)
+    args.importdir = language_facts_file.parent
+
+    with open(language_facts_file) as fd:
+        language = fd.read().strip().upper()
+
+    if language is None:
+        error(f"unable to read language from import: '{args.importdir}'")
+        exit(1)
+
+    return language
+
+
+def detect_query_config(
+    args, language: Optional[str] = None
+) -> tuple[str, DatalogSource]:
+    """Returns language and taint analysis query to use based on language,
+    which it detects from the database, if not given"""
+
+    if not language:
+        with model.DB(args.input_index) as idb:
+            config = model.CTADLConfig(idb)
+            language = config.language.upper()
+            status(f"SUT language: {language}", verb=1)
+
+    src = None
+    if language in default_queries:
+        src = default_queries[language]
+    else:
+        src = compiled_query
+    assert src is not None
+    return language, src
+
+
+def detect_match_config(args, language: Optional[str] = None) -> DatalogSource:
+    if not language:
+        with model.DB(args.input_index) as idb:
+            config = model.CTADLConfig(idb)
+            language = config.language.upper()
+            status(f"SUT language: {language}", verb=1)
+    dl = ctx_stack.enter_context(
+        resources.as_file(
+            resources.files(ctadl) / "souffle-logic" / "match" / "query.dl"
+        )
+    )
+    return DatalogSource(language, src=str(dl))
+
+
+def import_query_models(args, language: str) -> Optional[Path]:
+    models = None
+    if args.query and args.query.suffix in [".json", ".json5"]:
+        models = args.query
+    elif args.query is None and language not in default_queries:
+        models = ctx_stack.enter_context(
+            resources.as_file(
+                resources.files(ctadl)
+                / "models"
+                / language.lower()
+                / "default-query.json"
+            )
+        )
+    return models
+
+
+def after_index(args: Namespace):
+    """Puts metadata into index and sets DB options for SQL query efficiency"""
+    with model.DB(args.output_index) as db:
+        update_index_config(
+            db,
+            [
+                ("CTADL_Import_Path", str(args.importdir.resolve())),
+                ("CTADL_Index_Timestamp", datetime.datetime.now().isoformat()),
+                (
+                    "CTADL_Index_Models",
+                    str(args.models.resolve() if args.models is not None else ""),
+                ),
+            ],
+        )
+        # Compress DB with new settings
+        db.execute(f'PRAGMA "page_size"=65536')
+        db.execute("VACUUM")
+        db.commit()
+        model.create_ir_indexes(db)
+
+
+def estimate_problem_size(facts):
+    if Path(facts).is_file():
+        return os.path.getsize(Path(facts))
+
+    nbytes = sum(os.path.getsize(d) for d in os.scandir(facts) if d.is_file())
+    return nbytes
+
+
+def facts_are_large(args):
+    baseline = 4096.0
+    divider = 1.0
+    if args.star:
+        divider *= 4.0
+    if args.cha:
+        divider *= 2
+    return baseline / divider
+
+
+# ---------------------------------------------------------------------------
+
+
+def get_formatter(
+    name: Literal[
+        "summary", "sarif", "sarif+instructions", "sarif+graphs", "sarif+all"
+    ],
+    strategy: Literal["front", "back", "both"],
+):
+    if name.startswith("sarif"):
+        # "sarif" config
+        results: list[ctadl.vis.formatters.ResultType] = ["path_result"]
+        if name == "sarif+all":
+            results = [
+                "graphs",
+                "instruction_result",
+                "vertex_result",
+                "path_result",
+                "source_result",
+                "sink_result",
+                "source_sink_function_result",
+            ]
+        elif name == "sarif+instructions":
+            results.append("instruction_result")
+        elif name == "sarif+graphs":
+            results.append("graphs")
+        return ctadl.vis.formatters.SARIFFormatter(results=results, strat=strategy)
+    elif name == "summary":
+        return ctadl.vis.formatters.SummaryFormatter()
+    elif name == "text":
+        raise NotImplementedError
+
+    return None
+
+
+def visualize_query_results(
+    input_index: str,
+    format: Literal[
+        "summary", "sarif", "sarif+instructions", "sarif+graphs", "sarif+all"
+    ],
+    strategy: Literal["front", "back", "both"],
+    output: Optional[str],
+):
+    status(f"reading results from '{Path(input_index).resolve()}'", verb=1)
+    if format == "summary":
+        advise(f"to see paths, use: --format=sarif")
+
+    with model.DB(input_index) as db:
+        formatter = get_formatter(format, strategy)
+        if formatter:
+            global ctx_stack
+            file = sys.stdout
+            if output is not None:
+                file = ctx_stack.enter_context(writer(str(output)))
+            formatter.print_taint_results(db, file)
+
+
+def visualize_match_results(
+    input_index: str,
+    format: Literal[
+        "summary", "sarif", "sarif+instructions", "sarif+graphs", "sarif+all"
+    ],
+    output: Optional[Path],
+):
+    status(f"reading results from '{input_index}'", verb=1)
+    if format == "summary":
+        advise(f"to see source results, use: --format sarif")
+        status("summary of match results:")
+
+    with model.DB(input_index) as db:
+        formatter = get_formatter(format, "front")
+        if formatter:
+            global ctx_stack
+            file = sys.stdout
+            if output is not None:
+                file = ctx_stack.enter_context(writer(str(output)))
+            formatter.print_match_results(db, file)
+            exit(0)
+
+
+def check_indexing_errors(index):
+    with model.DB(index) as db:
+        messages = [r[0] for r in execute(db, """ SELECT * FROM CTADLError """)]
+        num_errors = len(messages)
+        if num_errors > 0:
+            for message in messages:
+                error(f"internal error: {message}")
+            error(f'found {pluralize(num_errors, "error")}')
+            error_issue_message()
+
+
+def get_function_summaries_as_model_generators(input_index):
+    """Dumps function summaries as model generators"""
+    with model.DB(input_index) as conn:
+        return JSONTranslator.get_propagation_models(conn)
+
+
+def print_query_template(output: Optional[Path]) -> None:
+    j = {
+        "model_generators": [
+            {
+                "find": "methods",
+                "where": [
+                    {
+                        "constraint": "signature_match",
+                        "name": "getSourceData",
+                        "parent": "Landroid/content/Context;",
+                    }
+                ],
+                "model": {
+                    "sources": [{"kind": "Label", "port": "Return"}],
+                },
+            },
+            {
+                "find": "methods",
+                "where": [
+                    {
+                        "constraint": "signature_match",
+                        "name": "sinkMethod",
+                        "parent": "Landroid/content/Context;",
+                    }
+                ],
+                "model": {
+                    "sinks": [{"kind": "Label", "port": "Argument(*)"}],
+                },
+            },
+        ]
+    }
+    global ctx_stack
+    file = sys.stdout
+    if output is not None:
+        file = ctx_stack.enter_context(writer(str(output)))
+    print(json.dumps(j, indent=2), file=file)
+
+
+def update_index_config(conn: sqlite3.Connection, pairs: Iterable[tuple[str, str]]):
+    config = model.CTADLConfig(conn)
+    for key, value in pairs:
+        config[key] = value
+    conn.commit()
+
+
+def get_os_shlib_flags():
+    mac_shlib_flags = [
+        "-dynamiclib",
+        "-install_name",
+        "@executable_path/libfunctors.dylib",
+    ]
+    linux_shlib_flags = ["-shared", "-Wl,-soname,$ORIGIN/libfunctors.so"]
+    so_ext = ".dylib" if platform.system() == "Darwin" else ".so"
+    shlib_flags = (
+        mac_shlib_flags if platform.system() == "Darwin" else linux_shlib_flags
+    )
+    return shlib_flags, so_ext
+
+
+def find_preprocessor(infile: str) -> PreprocessCommand:
+    """Finds preprocessor and creates command to invoke it, including input file
+
+    The following preprocessors are searched, in order:
+    - mcpp
+    - gcc -E
+    - clang -E"""
+    # mcpp then gcc
+    mcpp_path = shutil.which("mcpp")
+    if mcpp_path:
+        c = PreprocessCommand(mcpp_path)
+        c.add_args(["-P", "-W0", infile])
+        return c
+    clang_path = shutil.which("clang")
+    logging.debug("clang path: %s", clang_path)
+    gcc_path = shutil.which("gcc")
+    logging.debug("gcc path: %s", gcc_path)
+    cc_path = os.getenv("CC", gcc_path or clang_path)
+    if cc_path:
+        logging.debug("cc path: %s", cc_path)
+        cmd_elts = shlex.split(cc_path)
+        c = PreprocessCommand(cmd_elts[0])
+        c.add_args(cmd_elts[1:])
+        c.add_args(["-E", "-P"])
+        # GCC detects filetypes by extension and it decides that .dl is a
+        # linker file. Then it errors out because datalog isn't really a linker
+        # file. We force the filetype to be "c" so that it doesn't do that.
+        c.add_args(["-x", "c", infile])
+        return c
+    error(
+        "Cannot not find mcpp, gcc, or clang in PATH: cannot preprocess datalog.",
+        remediations=["Set CC in environment to override gcc", "Install mcpp"],
+    )
+    exit(1)
+
+
+def get_souffle_path() -> str:
+    souffle_path = os.getenv("SOUFFLE", shutil.which("souffle"))
+    if souffle_path is None:
+        error(
+            "Cannot find souffle in PATH",
+            remediations=[
+                "Install souffle",
+                "Set environment variable SOUFFLE to the souffle binary",
+            ],
+        )
+        exit(1)
+    return souffle_path
+
+
+def compile_functors(args):
+    souffle_path = get_souffle_path()
+    cplusplus_path = os.getenv("CXX", shutil.which("c++"))
+    cplusplus_flags = os.getenv("CXXFLAGS", "").split()
+    shlib_flags, so_ext = get_os_shlib_flags()
+
+    libfunctors_so = os.path.join(analysisdir, "libfunctors" + so_ext)
+    logger.debug("Checking for libfunctors: '%s'", libfunctors_so)
+    if Path(libfunctors_so).exists():
+        return
+
+    if cplusplus_path is None:
+        error(
+            "Cannot find c++ compiler",
+            remediations=[
+                "Put 'c++' in your PATH",
+                "Set environment variable CXX to a C++ compiler",
+            ],
+        )
+        exit(1)
+    functors_cpp = ctx_stack.enter_context(
+        resources.as_file(resources.files(ctadl) / "souffle-logic" / "functors.cpp")
+    )
+    souffle_base = Path(souffle_path).parents[1]
+    c = Command(cplusplus_path)
+    c.add_args(
+        [
+            "-O2",
+            "-Wall",
+            "--std=c++17",
+            "-I",
+            str(souffle_base / "include"),
+            "-I",
+            str(souffle_base / "include" / "souffle"),
+            str(functors_cpp),
+            "-c",
+            "-fPIC",
+            "-o",
+            os.path.join(args.tmpdir, "functors.o"),
+        ]
+    )
+    c.add_args(cplusplus_flags)
+    remediations = [
+        "Ensure you have a C++ compiler (like gcc or clang) installed.",
+        "Set CXX to your compiler path",
+    ]
+    try:
+        c.run(capture_output=(ctadl.verbosity <= 0 or args.quiet))
+    except CommandFailure as fail:
+        error("Cannot compile functors.cpp", remediations=remediations)
+        fail.display_capture_and_exit()
+
+    c = Command(cplusplus_path)
+    c.add_args(shlib_flags)
+    c.add_args(
+        [
+            "-o",
+            os.path.join(analysisdir, "libfunctors" + so_ext),
+            os.path.join(args.tmpdir, "functors.o"),
+        ]
+    )
+    try:
+        c.run(capture_output=(ctadl.verbosity <= 0 or args.quiet))
+    except CommandFailure as fail:
+        error("Cannot compile libfunctors", remediations=remediations)
+        fail.display_capture_and_exit()
+
+
+def build_analysis(
+    args: Namespace, src: str
+) -> Union[SouffleCommand, SouffleCompiledAnalysis]:
+    """Finds or compiles an indexer and returns it
+
+    This function compiles the functors and puts them in appdata.
+
+    By default, looks for an existing compiled indexer in the users appdata
+    directory. If it's not there, compiles it for re-use before returning it.
+    The indexers name is derived from a hash of the contents of the Datalog
+
+    If the user requests interpreted souffle, just returns that"""
+
+    os.makedirs(str(analysisdir), exist_ok=True)
+    compile_functors(args)
+
+    algo = hashlib.sha256()
+    with open(src, "rb") as file:
+        for byte_block in iter(lambda: file.read(4096), b""):
+            algo.update(byte_block)
+    filename = algo.hexdigest()
+    bin = analysisdir / filename
+
+    logging.debug("checking for compiled analysis at '%s'", bin)
+    if not bin.exists():
+        if not args.compile_analysis_opt:
+            logging.debug("returning interpreted analysis")
+            c = SouffleCommand(get_souffle_path())
+            c.add_arg(src)
+            return c
+        status(f"compiling souffle analysis to '{bin}'...")
+        os.makedirs(str(bin.parent), exist_ok=True)
+        c = SouffleCompileCommand(get_souffle_path())
+        try:
+            c.compile(src, bin, args)
+            if not bin.exists():
+                error(f"souffle compilation failed to produce output: '{str(bin)}'")
+                exit(1)
+        except CommandFailure as fail:
+            error("souffle compilation failed")
+            fail.display_capture_and_exit()
+    return SouffleCompiledAnalysis(str(bin))
+
+
+def dump_analysis(
+    args: Namespace, ds: DatalogSource, filename: Union[str, Path]
+) -> None:
+    """Dumps preprocessed analysis to file, possibly appending user datalog
+    file"""
+    assert compiled_indexers is not None
+    infile, outfile = ds.src, str(filename)
+    c = find_preprocessor(infile)
+    c.config_macros(args)
+    # c.add_args(["-I", str(Path(infile).parent)])
+    c.add_args(["-o", outfile])
+    try:
+        c.run(capture_output=(ctadl.verbosity <= 0 or args.quiet))
+    except CommandFailure as fail:
+        error(f"Error preprocessing datalog")
+        fail.display_capture_and_exit()
+
+    # Appends user dl file
+    if args.dl:
+        with open(filename, "a") as file:
+            with open(args.dl, "r") as dlfile:
+                file.write(dlfile.read())
+
+
+def write_query_models(args: Namespace, qmodels):
+    """Writes models for a query to the database"""
+    facts = model.Facts(args.input_index)
+    facts.add_input_relation(
+        "MG_SliceDirection",
+        [ColumnSpec("dir", "TEXT NOT NULL")],
+    )
+    with facts.writer() as w:
+        if any(d in args.compute_slices for d in ["forward", "fwd", "all"]):
+            facts.write(w, "MG_SliceDirection", "forward")
+        if any(d in args.compute_slices for d in ["backward", "bwd", "all"]):
+            facts.write(w, "MG_SliceDirection", "backward")
+    model_translator = JSONTranslator(facts)
+    if qmodels is not None:
+        model_translator.translate(
+            qmodels,
+            args.validate_models,
+            progress=ctadl.is_verbosity_enabled_for(1),
+        )
+    write_analyzer_config(args, facts)
+
+
+def after_query(args, src: DatalogSource, qmodels):
+    """Saves query information to database and adds some convenient views"""
+    with model.DB(args.input_index) as db:
+        update_index_config(
+            db,
+            [
+                ("CTADL_Query", str(qmodels if qmodels else src.src)),
+                ("CTADL_Query_Timestamp", datetime.datetime.now().isoformat()),
+            ],
+        )
+        model.create_taint_views(db)
+        model.create_taint_indexes(db)
+
+
+def configure_query_args(args):
+    if not hasattr(args, "macro"):
+        args.macro = []
+    args.macro.append("CTADL_EXPORT_SLICE")
+    args.macro.append("CTADL_NO_STATS")
+    args.macro.append("CTADL_IMPORT_LANG_FACTS_FROM_DB")
+    args.macro.append("CTADL_IMPORT_IR_FROM_DB")
+    args.macro.append("CTADL_IMPORT_GRAPH_FROM_DB")
+    args.output_index = args.input_index
+
+
+# ---------------------------------------------------------------------------
+# Each subcommand is handled by one of the following handlers
+
+
+def handle_dump_analysis(args):
+    assert compiled_indexers is not None
+    language = args.language
+    if args.phase == "index":
+        if not language:
+            language = detect_import_language(args)
+        dump_analysis(args, compiled_indexers[language.upper()], args.output)
+
+    elif args.phase == "query":
+        _, src = detect_query_config(args, language.upper())
+        configure_query_args(args)
+        dump_analysis(args, src, args.output)
+
+    else:
+        error(f"Cannot dump analysis type: '{args.phase}'")
+
+
+def handle_inspect(args):
+    if args.diff:
+        args.diff = args.diff.resolve()
+    default = True
+    if args.dump_summaries:
+        default = False
+        status(f"dumping function summaries for '{args.input_index}'", verb=1)
+        with model.DB(args.input_index) as conn:
+            m = JSONTranslator.get_propagation_models(conn)
+        with writer(args.dump_summaries) as fp:
+            print(json.dumps(m, indent=2), file=fp)
+    if args.dump_source_sink_models:
+        default = False
+        status(f"dumping source/sink models for '{args.input_index}'", verb=1)
+        with model.DB(args.input_index) as conn:
+            m = JSONTranslator.get_endpoint_models(conn)
+        with writer(args.dump_source_sink_models) as fp:
+            print(json.dumps(m, indent=2), file=fp)
+    if args.dump_models:
+        default = False
+        status(f"dumping all models for '{args.input_index}'", verb=1)
+        with model.DB(args.input_index) as conn:
+            m1 = JSONTranslator.get_propagation_models(conn)
+        with model.DB(args.input_index) as conn:
+            m2 = JSONTranslator.get_endpoint_models(conn)
+        m = {
+            "model_generators": m1.get("model_generators", [])
+            + m2.get("model_generators", [])
+        }
+        with writer(args.dump_models) as fp:
+            print(json.dumps(m, indent=2), file=fp)
+    if args.dump_black_hole_functions:
+        default = False
+        with model.DB(args.input_index) as conn:
+            m = JSONTranslator.get_unmodeled_ports(conn)
+        with writer(args.dump_black_hole_functions) as fp:
+            print(json.dumps(m, indent=2), file=fp)
+    if args.diff:
+        default = False
+        ctadl.util.diff.diff(
+            Path(args.input_index).resolve(),
+            args.diff,
+            args.diff_table,
+            args.diff_columns,
+        )
+
+    if default:
+        status(f"printing stats for '{args.input_index}'", verb=1)
+        with model.DB(args.input_index) as db:
+            model.print_stats(db)
+            config = model.CTADLConfig(db)
+            if "CTADL_Query" in config:
+                visualize_query_results(args.input_index, "summary", "front", None)
+
+
+def handle_import(args):
+    # XXX write the filename to the facts
+    for name, plugin in import_plugins.items():
+        MISSING = object()
+        if getattr(plugin, "language", MISSING) == args.language:
+            status(f"using plugin: {name}", verb=1)
+            outpath = Path(args.output)
+            if outpath.exists():
+                if not args.overwrite:
+                    error(
+                        f"error: output exists: '{outpath}'",
+                        remediations="try 'import -f' if you want to overwrite it",
+                    )
+                    exit(1)
+            os.makedirs(args.output, exist_ok=True)
+            artifact = Path(args.artifact)
+            if not artifact.exists():
+                error(f"artifact file doesn't exist: '{artifact}'")
+            pluginret = plugin.run(
+                ctadl,
+                args,
+                str(artifact.resolve()),
+                args.output,
+                argument_passthrough=args.argument_passthrough or [],
+            )
+            logger.info("plugin returned: %s", pluginret)
+            if pluginret.returncode != 0:
+                exit(pluginret.returncode)
+            status(f"SUT imported to '{Path(args.output).resolve()}'")
+            advise(
+                f"index with 'ctadl --directory {Path(args.output).resolve()} index'"
+            )
+            break
+
+
+def handle_empty_import(args):
+    error(
+        "error: The are no language plugins for the import command. "
+        "See INSTALL.md for how to install them."
+    )
+
+
+def handle_export(args):
+    for name, plugin in export_plugins.items():
+        if args.format in getattr(plugin, "export_formats", []):
+            status(f"using plugin: {name}", verb=1)
+            pluginret = plugin.run(
+                ctadl,
+                args,
+                args.format,
+                args.input_index,
+                args.output,
+                argument_passthrough=getattr(args, "argument_passthrough", None) or [],
+            )
+            exit(pluginret)
+    error("error: no suitable plugin found for format '{args.format}'")
+    error_issue_message()
+
+
+def handle_empty_export(args):
+    error(
+        "error: There are no export plugins for the export command. "
+        "See INSTALL.md for how to install them."
+    )
+    exit(1)
+
+
+def handle_index(args):
+    reindex = args.append
+    if reindex:
+        logging.info("reindexing")
+        args.macro.append("CTADL_IMPORT_IR_FROM_DB")
+        args.macro.append("CTADL_IMPORT_GRAPH_FROM_DB")
+    outfile = Path(args.output_index)
+    if not reindex and outfile.exists():
+        if not outfile.is_file():
+            error("error: output exists but isn't a file: '{}'".format(outfile))
+            exit(1)
+        elif args.overwrite:
+            outfile.unlink()
+        else:
+            error(
+                f"error: output exists: '{outfile}'",
+                remediations="try 'index -f' if you want to overwrite it",
+            )
+            exit(1)
+
+    language = detect_import_language(args)
+    status(f"SUT language: {language}", verb=1)
+    src = "index.dl"
+    models = ctx_stack.enter_context(
+        resources.as_file(
+            resources.files(ctadl) / "models" / language.lower() / "default-index.json"
+        )
+    )
+    facts = model.Facts(args.importdir)
+    model_translator = JSONTranslator(facts)
+    model_translator.translate(
+        models,
+        validate=args.validate_models,
+        progress=ctadl.is_verbosity_enabled_for(1),
+    )
+    if args.models:
+        model_translator.translate(args.models, validate=args.validate_models)
+    dump_analysis(args, compiled_indexers[language], src)
+    write_analyzer_config(args, facts)
+    analyzer = build_analysis(args, src)
+    analyzer.analyze(args.importdir if facts.is_fact_dir else None, None, args)
+    status(f"index written to '{Path(args.output_index).resolve()}'")
+    after_index(args)
+    check_indexing_errors(args.output_index)
+
+
+def handle_query(args):
+    if args.template:
+        print_query_template(Path(args.output) if args.output else None)
+        exit(0)
+    if not Path(args.input_index).exists():
+        error(f"error: input index does not exist: '{args.input_index}'")
+        exit(1)
+    status(f"using index '{args.input_index}'", verb=1)
+
+    language, src = detect_query_config(args)
+    qmodels = import_query_models(args, language)
+    outfile = Path(args.input_index)
+
+    configure_query_args(args)
+    if args.query and args.query.suffix == ".dl":
+        # XXX DEPRECATED D100
+        warn(".dl queries are deprecated, use the --dl argument instead")
+        src = DatalogSource(lang=language, bin="", src=args.query)
+    out = "query.dl"
+    dump_analysis(args, src, out)
+
+    status(f"using {args.jobs} concurrent jobs (-j {args.jobs})", verb=1)
+    if args.skip_analysis:
+        status("got --skip-analysis, omitting query analysis", verb=1)
+    if not args.skip_analysis:
+        status(
+            f"running query from '{str(args.query)}' (use --skip-analysis to skip)",
+            verb=1,
+        )
+        if (
+            args.format in ["sarif+all", "sarif+graphs"]
+            and "all" != args.compute_slices
+        ):
+            warn(
+                f"got --format '{args.format}', consider passing --compute-slices 'all' to get complete taint results"
+            )
+        write_query_models(args, qmodels)
+        analyzer = build_analysis(args, out)
+        analyzer.analyze(None, None, args)
+        after_query(args, src, qmodels)
+        status(f"results written to '{outfile.resolve()}'")
+
+    if not args.quiet:
+        visualize_query_results(
+            args.input_index, args.format, args.path_avoid_strategy, args.output
+        )
+    check_indexing_errors(args.input_index)
+
+
+# ---------------------------------------------------------------------------
+# The code in this section sets up command line parsers for subcommands and
+# their flags
+
+
+# Number of characters to wrap help text to, or -1 if make_help hasn't been run
+# yet
+columns = -1
+
+
+def make_help(s: str, dedent=False) -> str:
+    # Don't worry about wrapping if we're not a tty
+    if not sys.stdout.isatty():
+        return s
+    global columns
+    if columns == -1:
+        columns, _ = shutil.get_terminal_size()
+    if dedent:
+        s = textwrap.dedent(s)
+    if columns >= 70:
+        return "\n".join(textwrap.wrap(s, width=columns))
+    else:
+        return s
+
+
+def parser_add_argument_wrapper(parser, *args, **kwargs):
+    """Wrapper for parser.add_argument that wraps all the help text for each
+    option to a sensible width"""
+    if "help" in kwargs:
+        kwargs["help"] = make_help(kwargs["help"])
+    return parser.add_argument(*args, **kwargs)
+
+
+def make_parser_with_common_cli_options(parser):
+    parser_add_argument_wrapper(
+        parser,
+        "-q",
+        "--quiet",
+        action="store_true",
+        default=False,
+        help="Quiet mode. Restricts output to errors",
+    )
+    parser_add_argument_wrapper(
+        parser,
+        "-v",
+        "--verbose",
+        action="count",
+        default=0,
+        help="Turns on verbose mode, intended for users to get a clearer idea of the steps taken during analysis. Multiple -v occurrences increase verbosity. Level 1: increase output of ctadl, including souffle warnings. Level 2: Make souffle to run in verbose mode, which outputs rules as they're executed.",
+    )
+
+
+def make_parser_with_common_options(parser, overwrite=True):
+    make_parser_with_common_cli_options(parser)
+    parser_add_argument_wrapper(
+        parser,
+        "-j",
+        "--jobs",
+        metavar="<n>",
+        default=get_default_jobs(),
+        type=int,
+        help="Concurrent jobs (passed to Souffle). Defaults to half the cpu count. (default: %(default)s)",
+    )
+    parser_add_argument_wrapper(
+        parser,
+        "--all-outputs",
+        action="store_true",
+        default=False,
+        help="(For debugging) Outputs all the tables the author has found useful for debugging (default: %(default)s)",
+    )
+    parser_add_argument_wrapper(
+        parser,
+        "-M",
+        "--macro",
+        action="append",
+        default=list(),
+        help="(For debugging) -M bar -M foo -M baz=quuz, activate in preprocessor",
+    )
+    if overwrite:
+        parser_add_argument_wrapper(
+            parser,
+            "-f",
+            "--overwrite",
+            action="store_true",
+            default=False,
+            help="Force overwrite of output database, if it exists (default: %(default)s)",
+        )
+    parser_add_argument_wrapper(
+        parser,
+        "--souffle-arg",
+        action="append",
+        default=list(),
+        help="Passes arg to souffle",
+    )
+    parser_add_argument_wrapper(
+        parser,
+        "--preprocessor-arg",
+        action="append",
+        default=list(),
+        help="Passes arg to Datalog preprocessor",
+    )
+    parser_add_argument_wrapper(
+        parser,
+        "--skip-model-validation",
+        action="store_false",
+        dest="validate_models",
+        default=True,
+        help="Skips using jsonschema to validate models (default: False)",
+    )
+    parser_add_argument_wrapper(
+        parser,
+        "--no-compile-analysis",
+        action="store_false",
+        dest="compile_analysis_opt",
+        default=True,
+        help="If no compiled analysis is available, runs analysis with souffle interpreter (default: False)",
+    )
+    return parser
+
+
+def make_dump_analysis_parser(parser):
+    make_parser_with_common_cli_options(parser)
+    parser_add_argument_wrapper(
+        parser, "phase", choices=["index", "query"], help="Phase to dump"
+    )
+    parser_add_argument_wrapper(
+        parser,
+        "-o",
+        "--output",
+        metavar="<file>",
+        default="analysis.dl",
+        help="Output file for analysis (default: %(default)s)",
+    )
+    parser_add_argument_wrapper(
+        parser,
+        "--preprocessor-arg",
+        action="append",
+        default=list(),
+        help="Passes arg to Datalog preprocessor",
+    )
+    parser_add_argument_wrapper(
+        parser,
+        "--dl",
+        metavar="<datalog>",
+        help="Datalog to append to analysis",
+    )
+    parser_add_argument_wrapper(
+        parser,
+        "--language",
+    )
+    parser_add_argument_wrapper(
+        parser,
+        "importdir",
+        type=Path,
+        nargs="?",
+        default=".",
+        help="The program to analyze as an import directory. See 'ctadl import' (default: '%(default)s')",
+    )
+    parser.set_defaults(func=handle_dump_analysis)
+
+
+def make_inspect_parser(parser):
+    parser_add_argument_wrapper(
+        parser,
+        "-i",
+        "--input",
+        action="store",
+        metavar="<db>",
+        dest="input_index",
+        default="ctadlir.db",
+        help="Index database to inspect (default: %(default)s)",
+    )
+    parser_add_argument_wrapper(
+        parser,
+        "--dump-summaries",
+        action="store",
+        type=str,
+        const="-",
+        default=None,
+        metavar="<file>",
+        nargs="?",
+        help="Dumps function summaries as JSON model generators. Argument is a filename or '-' for stdout (default: %(default)s)",
+    )
+    parser_add_argument_wrapper(
+        parser,
+        "--dump-source-sink-models",
+        action="store",
+        type=str,
+        const="-",
+        default=None,
+        metavar="<file>",
+        nargs="?",
+        help="Dumps taint source/sink as JSON model generators. Argument is a filename or '-' for stdout (default: %(default)s)",
+    )
+    parser_add_argument_wrapper(
+        parser,
+        "--dump-models",
+        action="store",
+        type=str,
+        const="-",
+        default=None,
+        metavar="<file>",
+        nargs="?",
+        help="Dumps taint source/sink and method propagation models as JSON model generators. Argument is a filename or '-' for stdout (default: %(default)s)",
+    )
+    parser_add_argument_wrapper(
+        parser,
+        "--dump-black-hole-functions",
+        action="store",
+        type=str,
+        const="-",
+        default=None,
+        metavar="<file>",
+        nargs="?",
+        help="Dumps model skeletons for taint that went into an unmodeled function, or function that had no callee. Argument is a filename or '-' for stdout (default: %(default)s)",
+    )
+    parser_add_argument_wrapper(
+        parser,
+        "--diff",
+        type=Path,
+        default=None,
+        metavar="<db>",
+        help="""(Debugging) Diff input database with argument. Checks that table sizes match. If they don't, print difference information. Can be useful for zooming in on errors in producing IR tables. This action is configurable by the options --diff-table and --diff-columns.""",
+    )
+    parser_add_argument_wrapper(
+        parser,
+        "--diff-table",
+        default=None,
+        metavar="<name>",
+        help="(Advanced) SQL table on which perform a deep diff (see also --diff-columns) (default: %(default)s). It should be one of the tables printed by --diff",
+    )
+    parser_add_argument_wrapper(
+        parser,
+        "--diff-columns",
+        default="*",
+        metavar="<sqlcols>",
+        help="(Advanced) SQL column spec. Designates a subset of columns in --diff-table to diff (default: %(default)s)",
+    )
+    parser.set_defaults(func=handle_inspect)
+    return parser
+
+
+def make_import_parser(parser):
+    language_choices = [
+        plugin.language
+        for plugin in import_plugins.values()
+        if getattr(plugin, "language", None) is not None
+    ]
+    if not language_choices:
+        parser.set_defaults(func=handle_empty_import)
+        return
+    for plugin in import_plugins.values():
+        if getattr(plugin, "language", None) is None:
+            continue
+        if hasattr(plugin, "make_parser"):
+            parser = getattr(plugin, "make_parser")(parser)
+    parser_add_argument_wrapper(
+        parser,
+        "language",
+        choices=language_choices,
+        type=str.upper,
+        help="Language front-end to use to import program. Case-insensitive",
+    )
+    parser_add_argument_wrapper(
+        parser,
+        "artifact",
+        help="Native artifact, such as apk, jar, binary, bitcode file",
+    )
+    parser_add_argument_wrapper(
+        parser,
+        "-o",
+        "--output",
+        metavar="<dir>",
+        default="import",
+        help="Output directory (default: %(default)s)",
+    )
+    parser_add_argument_wrapper(
+        parser,
+        "-f",
+        "--overwrite",
+        action="store_true",
+        default=False,
+        help="Force overwrite of output path, if it exists (default: %(default)s)",
+    )
+    parser_add_argument_wrapper(
+        parser,
+        "-q",
+        "--quiet",
+        action="store_true",
+        default=False,
+        help="Quiet mode. Restricts output to errors",
+    )
+    parser_add_argument_wrapper(
+        parser,
+        "-A",
+        "--argument-passthrough",
+        action="append",
+        metavar="<arg>",
+        help="Passthrough args for the underlying fact generator",
+    )
+
+    parser.set_defaults(func=handle_import)
+    return parser
+
+
+def make_export_parser(parser):
+    format_choices: list[str] = list(
+        chain.from_iterable(
+            plugin.export_formats
+            for plugin in export_plugins.values()
+            if getattr(plugin, "export_formats", [])
+        )
+    )
+    if not format_choices:
+        parser.set_defaults(func=handle_empty_export)
+        return
+    for plugin in export_plugins.values():
+        if not getattr(plugin, "export_formats", []):
+            continue
+        if hasattr(plugin, "make_parser"):
+            parser = getattr(plugin, "make_parser")(parser)
+    parser_add_argument_wrapper(
+        parser,
+        "-o",
+        "--output",
+        metavar="<file>",
+        default="dataflow.gml",
+        help="Output path. (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--format",
+        default=next(iter(sorted(format_choices))),
+        choices=format_choices,
+        help="""Output format (default: %(default)s)""",
+    )
+    parser_add_argument_wrapper(
+        parser,
+        "-f",
+        "--overwrite",
+        action="store_true",
+        default=False,
+        help="Force overwrite of output path, if it exists (default: %(default)s)",
+    )
+    parser.set_defaults(func=handle_export)
+
+
+def make_index_parser_options(parser):
+    parser_add_argument_wrapper(
+        parser,
+        "--dl",
+        metavar="<datalog>",
+        help="Datalog to append to indexing analysis",
+    )
+    parser_add_argument_wrapper(
+        parser,
+        "--models",
+        metavar="<models-json>",
+        type=Path,
+        help="Models to use for indexing. These must be written in our JSON model format",
+    )
+    # parser.add_argument(
+    #     "-o",
+    #     "--output",
+    #     metavar="<db>",
+    #     dest="output_index",
+    #     default=ctadl.defaultdb,
+    #     help="CTADL's output will go into this sqlite3 database (default: %(default)s)",
+    # )
+    parser_add_argument_wrapper(
+        parser,
+        "--star",
+        action="store_true",
+        default=False,
+        help="Enables star abstraction (default: %(default)s)",
+    )
+    parser_add_argument_wrapper(
+        parser,
+        "--no-star",
+        action="store_false",
+        dest="star",
+        help="Disables star abstraction (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--globals-strategy",
+        metavar="<name>",
+        default="param",
+        choices=["fastsummary", "param", "ignore"],
+        help=textwrap.dedent(
+            """Strategy for handling global variables. (default %(default)s)
+
+    ignore - ignore globals
+    fastsummary - (less precise) summarize global effects context insensitively
+    param - (more precise) thread globals as a parameter through every function"""
+        ),
+    )
+    parser_add_argument_wrapper(
+        parser,
+        "--object-tracking",
+        action="store_true",
+        default=False,
+        help="Enables object tracking for call graph construction (default: %(default)s)",
+    )
+    parser_add_argument_wrapper(
+        parser,
+        "--no-object-tracking",
+        action="store_false",
+        dest="object_tracking",
+        help="Disables object tracking for call graph construction (default: %(default)s)",
+    )
+    parser_add_argument_wrapper(
+        parser,
+        "--hybrid-inlining",
+        action="store_true",
+        default=True,
+        help="Enables Hybrid Inlining for call graph construction (default: %(default)s)",
+    )
+    parser_add_argument_wrapper(
+        parser,
+        "--no-hybrid-inlining",
+        action="store_false",
+        dest="hybrid_inlining",
+        help="Disables Hybrid Inlining for call graph construction (default: %(default)s)",
+    )
+    parser_add_argument_wrapper(
+        parser,
+        "--hybrid-inlining-context-bound",
+        action="store",
+        metavar="<k>",
+        nargs="?",
+        type=nonnegative_int,
+        help="Enables k-context-sensitivity for Hybrid Inlining and sets max context size to <k> (default: %(default)s)",
+    )
+    parser_add_argument_wrapper(
+        parser,
+        "--no-hybrid-inlining-context-bound",
+        dest="hybrid_inlining_context_bound",
+        action="store_const",
+        const=None,
+        help="Disables k-context-sensitivity (unbounded)",
+    )
+    parser_add_argument_wrapper(
+        parser,
+        "--hybrid-inlining-inlining-bound",
+        action="store",
+        metavar="<k>",
+        nargs="?",
+        default=hybrid_inlining_default_inlining_bound,
+        type=nonnegative_int,
+        help="Enables k-inlining-sensitivity for Hybrid Inlining and sets max inlining size to <k> (default: %(default)s)",
+    )
+    parser_add_argument_wrapper(
+        parser,
+        "--no-hybrid-inlining-inlining-bound",
+        dest="hybrid_inlining_inlining_bound",
+        action="store_const",
+        const=None,
+        help="Disables k-inlining-sensitivity (unbounded)",
+    )
+    parser_add_argument_wrapper(
+        parser,
+        "--hybrid-inlining-add-parthians-to-vertex",
+        action="store_true",
+        default=False,
+        help="Adds vertices needed for hybrid inlining to analysis vertex set (default: %(default)s)",
+    )
+    parser_add_argument_wrapper(
+        parser,
+        "--cha",
+        action="store_true",
+        default=False,
+        help="Enables all Class Hierarchy Analysis resolvents (default: %(default)s)",
+    )
+    parser_add_argument_wrapper(
+        parser,
+        "--no-cha",
+        action="store_false",
+        dest="cha",
+        help="Disables all Class Hierarchy Analysis resolvents (default: %(default)s)",
+    )
+    parser_add_argument_wrapper(
+        parser,
+        "--match-star-fields",
+        action="store_true",
+        help="Enables matching field to star accesses (default: %(default)s)",
+    )
+    parser_add_argument_wrapper(
+        parser,
+        "--no-match-star-fields",
+        action="store_false",
+        dest="match_star_fields",
+        help="Enables matching field to star accesses (default: %(default)s)",
+    )
+    parser_add_argument_wrapper(
+        parser,
+        "--dynamic-access-paths-max-length",
+        action="store",
+        metavar="<k>",
+        default=dynamic_access_paths_default_max_length,
+        type=nonnegative_int,
+        help="Enables dynamic creation of access paths as long as they're acyclic and at most length <k> [0 = disabled] (default: %(default)s)",
+    )
+    parser_add_argument_wrapper(
+        parser,
+        "--interprocedural-data-flow",
+        action="store_true",
+        default=True,
+        dest="interprocedural_data_flow",
+        help="Enables interprocedural data flow (default: True). This option enables the core CTADL analysis. Mainly used if some other process has passed --no-global-data-flow and you want to turn it back on.",
+    )
+    parser_add_argument_wrapper(
+        parser,
+        "--no-interprocedural-data-flow",
+        action="store_false",
+        dest="interprocedural_data_flow",
+        help="Disables interprocedural data flow (default: False). This option is intended for exporting our basic, local data flow graph for other tools to use. It cannot be used in conjunction with taint analysis.",
+    )
+    parser_add_argument_wrapper(parser, "--append", action="store_true", default=False)
+    parser_add_argument_wrapper(
+        parser,
+        "importdir",
+        type=Path,
+        nargs="?",
+        default=".",
+        help="The program to analyze as an import directory. See 'ctadl import' (default: '%(default)s')",
+    )
+    parser = make_parser_with_common_options(parser)
+    parser.set_defaults(func=handle_index)
+    return parser
+
+
+def make_query_parser(parser):
+    parser_add_argument_wrapper(
+        parser,
+        "query",
+        nargs="?",
+        type=Path,
+        help="JSON models file for the query",
+    )
+    parser_add_argument_wrapper(
+        parser,
+        "--dl",
+        metavar="<datalog>",
+        help="Datalog to append to analysis",
+    )
+    parser_add_argument_wrapper(
+        parser,
+        "-o",
+        "--output",
+        default="-",
+        metavar="<file>",
+        help="Output file. Use '-' to output to stdout (default: %(default)s)",
+    )
+    # parser.add_argument(
+    #    "-i",
+    #    "--index",
+    #    metavar="<db>",
+    #    dest="input_index",
+    #    default=ctadl.defaultdb,
+    #    help="Index database to use for the query (default: %(default)s)",
+    # )
+    parser.add_argument(
+        "--compute-slices",
+        default="fwd",
+        choices=["forward", "fwd", "backward", "bwd", "all", "auto"],
+        type=str.lower,
+        help="""Sets which slices to compute for the query (default: %(default)s). Slices proceed forward from sources and backward from sinks. The default is to compute a forward slice only.
+
+Choices:
+- forward, fwd: Forward slice only, starting from every source
+- backward, bwd: Backward slice only, starting from every sink
+- auto: Either forward or backward. The direction is chosen by estimating the number of endpoints and starting with the smallest set
+- all: Both forward and backward slices
+
+Paths are still computed, if any, regardless of the setting. This setting is mostly useful if you have outside knowledge that makes one strategy or the other more likely to be most efficient.""",
+    )
+    parser.add_argument(
+        "--template",
+        default=False,
+        action="store_true",
+        help="Generate a query template on stdout and exit.",
+    )
+    parser.add_argument(
+        "--format",
+        default="summary",
+        choices=["summary", "sarif", "sarif+instructions", "sarif+graphs", "sarif+all"],
+        type=str.lower,
+        help="""Output format (default: %(default)s)
+
+Formats:
+- summary: text based summary
+- sarif: Default SARIF output, optimized for VSCode
+- sarif+instructions: SARIF with every tainted instruction tagged, even if there are no paths.
+- sarif+graphs: SARIF with interprocedural forward and backward slice graphs. See also '--compute-slices all'
+- sarif+all: SARIF with every result type CTADL can produce. We recommend also setting '--compute-slices all' when using this setting""",
+    )
+    parser.add_argument(
+        "--path-avoid-strategy",
+        default="front",
+        choices=["front", "back", "both"],
+        type=str.lower,
+        help="""Path avoidance strategy (default: %(default)s)
+
+Strategies:
+- front: avoid paths with same start
+- back: avoid paths with same end
+- both: avoid paths with same start, then with same end""",
+    )
+    parser_add_argument_wrapper(
+        parser,
+        "--skip-analysis",
+        action="store_true",
+        help="Skip the analysis part of the query and go directly to generating results in some format",
+    )
+    parser = make_parser_with_common_options(parser, overwrite=False)
+    parser.set_defaults(func=handle_query)
+    return parser
+
+
+_all_plugins_description = "\n".join(
+    f"- {name} {mod.version}"
+    for name, mod in sorted(discovered_plugins.items(), key=lambda t: t[0])
+)
+ctadl_description = f"""
+CTADL - multi-language taint analyzer [version {ctadl.__version__}]
+
+CTADL (pronounced "citadel") is a taint analyzer developed at Sandia National
+Labs. It supports Java bytecode and Ghidra PCODE. It analyzes each instruction
+from the system under test (SUT) and produces a queryable data flow graph.
+SARIF is the primary output format; SARIF can be easily loaded in VSCode to
+visualize taint results.
+
+To report CTADL problems and discuss use cases:
+    - https://github.com/sandialabs/ctadl/issues
+    - https://github.com/sandialabs/ctadl/discussions
+
+The CTADL command-line interface is composed of a lot of subcommands. You can
+ask for help on any of these, e.g., `ctadl index --help`. CTADL uses a "working
+directory" model: each subcommand operates inside a working directory, the
+current directory by default. Setting the `ctadl --directory <dir>` option, or
+setting the environment variable CTADL_DEFAULT_DIRECTORY, causes CTADL to
+switch to the given working directory before performing the subsequent command.
+
+The following gets you started with a simple workflow. We support more complex
+situations; see docs/workflows.md in the CTADL distribution.
+
+<< Get started: step 0, import >>
+
+Importing is the process of taking a raw system under test (SUT) and
+translating it into a form CTADL can consume. It produces a directory or
+database of SUT "facts."
+
+    $ ctadl import jadx /path/to/myapp.apk -o out/myapp
+    SUT imported to 'out/myapp'
+
+The first argument is the SUT language; the second is the SUT itself.
+See `ctadl import --help` for supported languages and more information.
+
+Note: if this command fails, see "What if 'import' fails?" below.
+
+<< Get started: step 1, index >>
+
+Indexing constructs a global data flow graph. It produces a database, the SUT
+index.
+
+    $ ctadl --directory ./out/myapp index
+    SUT import directory: './out/myapp'
+    SUT language: JADX
+    indexing [...]
+    [...]
+    index written to 'ctadlir.db'
+
+Indexing the SUT may take a while and there is no especially meaningful
+progress to report (CTADL does print some resource usage information). Keep an
+eye on your RAM.
+
+<< Get started: step 2, query >>
+
+Step 2. Query the index with the 'query' command
+
+A query asks taint analysis questions of the SUT index. A query specifies a set
+of source nodes and sink nodes and answers the question, "Is there a path from
+any source to any sink?" Taint analysis answers are natively stored as graphs
+inside the index.
+
+    $ ctadl query [models.json]
+    using index 'ctadlir.db'
+    SUT language: JADX
+    using default JADX query
+    using 10 concurrent jobs (-j 10)
+    [...]
+    results written to 'ctadlir.db'
+    5 source vertexes reach 5 sink vertexes
+    8 source taint labels across 25 taint sources
+    8 sink taint labels across 113 taint sinks
+    12782 instructions tainted by sources
+    3099 instructions backward-tainted by sinks
+    done
+
+CTADL prints a summary of results in terms of the data flow graph. Vertexes are
+SUT variables + field accesses.
+
+When a query-file is not specified, CTADL runs a default query, as indicated
+above, for the SUT language, which can be useful to get used to CTADL
+workflows. 
+
+Users often want to write their own queries. See 'ctadl query --help' and the
+tutorial.md for more information.
+
+<< What if 'import' fails? >>
+
+CTADL uses a plugin architecture to discover SUT languages available to users.
+These are installed separately from CTADL. See INSTALL.md for info.
+
+Discovered plugins:
+{_all_plugins_description}
+
+CTADL pays attention to the following environment variables:
+- CTADL_DEFAULT_DIRECTORY: Directory CTADL switches to before an operation. See
+  also --directory.
+- SOUFFLE: Path to souffle binary.
+- CC, CXX, and CXXFLAGS: CC is used to find a preprocessor for analyses. CXX
+  and CXXFLAGS used to compile analyses.
+"""
+
+
+index_description = """
+Indexes a system under test (SUT). The index includes includes a description of
+the SUT in CTADL's intermediate representation (IR), a data flow graph, and a
+call graph. Outputs the index into a sqlite database.
+
+Indexing involves the most analysis of any part of CTADL. CTADL prints a
+variety of status messages to keep you apprised of what's going on under the
+hood. There are also a bunch of available options; the author has attempted to
+choose good defaults. The most commonly used are:
+
+    * -j N: Use N cores when indexing (by default, half the cores detected on this machine)
+    * -f: Overwrite the output filename, instead of erroring if it exists
+
+The other options are analysis parameters that affect how particular SUT
+features are modeled, degrees of approximation, call graph resolution
+algorithms, etc.
+
+Examples:
+
+    $ ctadl import myapp.apk -o myapp
+    $ ctadl --directory myapp index
+
+Indexes myapp and stores the index in 'ctadlir.db'.
+This is unfortunately *not* configurable due to the limitations of the Souffle
+Datalog engine. To optimize indexing, ensure that 'ctadlir.db' is not being
+written to over the network.
+
+    $ ctadl --directory myapp index -j12 -f
+
+Indexes myapp and writes to 'ctadlir.db', using 12 cores, if souffle supports it;
+and overwrites 'ctadlir.db' if it exists.
+"""
+
+
+query_description = """
+Runs a taint analysis query against a CTADL index. A taint query specifices a
+set of sources, a set of sinks, and an optional set of sanitizers. The result
+of a taint query is stored in the index, and natively it's stored as a graph of
+all vertexes and edges reachable forward from sources and backward from sinks.
+Vertexes are storage locations like variables and function paramaters, with
+fields.
+
+Query results themselves are stored opaquely. A common way to visualize them is
+to use SARIF, with the --format=sarif option. SARIF can be opened in VSCode to
+understand which statements are tainted.
+
+Examples:
+
+    $ ctadl query [models.json]
+
+Runs the default query on 'ctadlir.db' and outputs a summary of the taint
+results found. The default taint query uses a set of sources and sinks specific
+to the language analyzed; it attempts to capture common types of interesting
+data, like HTTP or Database data. For instance, JADX programs have a set of
+Java and Android sources and sinks.
+
+    $ ctadl query models.json --format sarif -o myapp-results.sarif
+
+models.json contains a list of model generators. Here is a simple example:
+
+    { "model_generators": [{
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "name": "openFileInput", "parent": "Landroid/content/Context;"
+        }
+      ],
+      "model": {
+        "sources": [{ "kind": "HttpContent", "port": "Return" }]
+      }
+    }]}
+"""
+
+match_description = """
+Runs a simple match query against a CTADL index. Match queries use the normal
+JSON model generators; match results are the set of things that match the
+"find" part of the model generators. This can be useful for grep-like queries,
+like finding instructions that use a certain field.
+
+This interface is experimental.
+
+Examples:
+
+    $ ctadl match models.json
+
+Runs the "find" matchers inside models.json and records the results in
+'ctadlir.db'. The results can be viewed using SARIF with the option `--format
+sarif`.
+
+models.json contains a list of model generators. Here is a simple example:
+
+  { "model_generators": [
+    {
+      "find": "instructions",
+      "where": [
+        { "constraint": "uses_field", "name": "mAdapter" }
+      ],
+      "model": {
+        "taint": [ { "kind": "Uses_mAdapter" } ]
+      }
+    }
+  ]}
+"""
+
+
+inspect_description = """
+Inspect an index. Used after 'index' or 'query', this command helps you dump
+useful things from the index. By default, prints a summary of the indexed code.
+
+Explanation of options:
+
+--dump-summaries: After analyzing a library, it can be useful to dump all the
+discovered summaries to be reused by another analysis. Use this option for
+that.
+
+--dump-source-sink-models: This option dumps all the matched sources and sinks,
+as model generators.
+
+--dump-models: Dump all models at once.
+"""
+
+
+def make_argparser():
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.RawTextHelpFormatter,
+        description=ctadl_description,
+    )
+    parser_add_argument_wrapper(
+        parser,
+        "--log-level",
+        metavar="<level>",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        default="WARNING",
+        type=str.upper,
+        help="Logger level: %(choices)s (default: %(default)s). Logging is primarily for devs or debugging the CTADL tool.",
+    )
+    parser_add_argument_wrapper(
+        parser,
+        "--directory",
+        metavar="<dir>",
+        type=Path,
+        help="Change to dir before executing subcommand. Can also be set through environment variable 'CTADL_DEFAULT_DIRECTORY'. Creates the directory if it does not exist.",
+    )
+    parser_add_argument_wrapper(
+        parser,
+        "--tmpdir",
+        default=None,
+        metavar="<dir>",
+        help="Temporary directory to use (default: auto)",
+    )
+    parser_add_argument_wrapper(
+        parser,
+        "--version",
+        action="version",
+        version=f"CTADL {ctadl.__version__}",
+        help="Print CTADL's version number and exit",
+    )
+    subparsers = parser.add_subparsers(required=True, help="subcommand")
+    index_parser = make_index_parser_options(
+        subparsers.add_parser(
+            "index",
+            formatter_class=argparse.RawTextHelpFormatter,
+            description=index_description,
+            help=make_help(
+                "Analyzes a SUT import to build a global data flow graph. The graph keeps track of flows between program variables and fields. Indexing can take quite a bit of time and memory."
+            ),
+        )
+    )
+
+    query_parser = make_query_parser(
+        subparsers.add_parser(
+            "query",
+            formatter_class=argparse.RawTextHelpFormatter,
+            description=query_description,
+            help="Runs a taint analysis query on an index",
+        )
+    )
+
+    inspect_parser = make_inspect_parser(
+        subparsers.add_parser(
+            "inspect",
+            formatter_class=argparse.RawTextHelpFormatter,
+            description=inspect_description,
+            help="Dumps useful things from an index",
+        )
+    )
+
+    dump_analysis_parser = make_dump_analysis_parser(
+        subparsers.add_parser(
+            "dump-analysis",
+            formatter_class=argparse.RawTextHelpFormatter,
+        )
+    )
+
+    import_plugins_d = "\n".join(
+        f"        - {pformat(mod)}" for mod in import_plugins.values()
+    )
+    export_plugins_d = "\n".join(
+        f"        - {pformat(mod)}" for mod in export_plugins.values()
+    )
+    import_plugin_d = f"""
+        Discovered plugins:
+{import_plugins_d}
+        """
+    export_plugin_d = f"""
+        Discovered plugins:
+{export_plugins_d}
+        """
+    import_warning = (
+        f"""
+        Warning: no import plugins were found. See the tutorial for how to install them separately
+        """
+        if not import_plugins
+        else ""
+    )
+    export_warning = (
+        f"""
+        Warning: no export plugins were found. See the tutorial for how to install them separately
+        """
+        if not export_plugins
+        else ""
+    )
+    import_header = f"""
+        Import a native program to CTADL's input format. Options that begin with a
+        plugin language pertain only to that plugin.
+        """
+    export_header = f"""
+        Export CTADL index information to an external format. Examples:
+
+            $ ctadl export --format gml -o dataflow.gml
+        """
+    import_d = import_header + import_plugin_d + import_warning
+    export_d = export_header + export_plugin_d + export_warning
+    import_parser = make_import_parser(
+        subparsers.add_parser(
+            "import",
+            formatter_class=argparse.RawTextHelpFormatter,
+            description=textwrap.dedent(import_d),
+            help="Imports a native program to CTADL so it can be indexed",
+        )
+    )
+    export_parser = make_export_parser(
+        subparsers.add_parser(
+            "export",
+            formatter_class=argparse.RawTextHelpFormatter,
+            description=textwrap.dedent(export_d),
+            help="Exports a CTADL index so it can be used in other workflows",
+        )
+    )
+    return parser
+
+
+def init_globals(ctx: contextlib.ExitStack):
+    """Initializes some globals that depend on resources"""
+    global compiled_indexers, compiled_query, default_queries, compiled_match
+
+    def rsf(r):
+        return str(ctx.enter_context(resources.as_file(r)))
+
+    compiled_indexers = {
+        lang.upper(): DatalogSource(lang, ctx)
+        for lang in [
+            "jadx",
+            "pcode",
+            "taint-front",
+        ]
+    }
+    compiled_query = DatalogSource(
+        bin=str(analysisdir / f"taint-query"),
+        src=rsf(
+            resources.files(ctadl) / "souffle-logic" / "information-flow" / "query.dl"
+        ),
+        lang="query",
+    )
+    default_queries = {
+        "PCODE": DatalogSource(
+            lang="pcode",
+            bin=str(analysisdir / "pcode-query"),
+            src=rsf(
+                resources.files(ctadl) / "souffle-logic" / "pcode" / "taintquery.dl"
+            ),
+        ),
+        "TAINT-FRONT": DatalogSource(
+            lang="taint-front",
+            bin=str(analysisdir / "taint-front-query"),
+            src=rsf(
+                resources.files(ctadl)
+                / "souffle-logic"
+                / "taint-front"
+                / "taintquery.dl"
+            ),
+        ),
+    }
+    compiled_match = DatalogSource(
+        bin=str(analysisdir / f"match-query"),
+        src=rsf(resources.files(ctadl) / "souffle-logic" / "match-flow" / "query.dl"),
+        lang="match",
+    )
+
+
+def main(argv):
+    global ctx_stack
+    parser = make_argparser()
+    if len(sys.argv) == 1:
+        parser.print_help(sys.stderr)
+        exit(1)
+    args = parser.parse_args()
+    if "input_index" not in args:
+        args.input_index = "ctadlir.db"
+    if "output_index" not in args:
+        args.output_index = "ctadlir.db"
+    logging.basicConfig(
+        format="%(levelname)s:%(filename)s:%(lineno)d:%(funcName)s:%(message)s",
+        level=getattr(logging, args.log_level.upper()),
+    )
+    logger.debug(args)
+    ctadl.quiet = getattr(args, "quiet", False)
+    ctadl.verbosity = getattr(args, "verbose", 0)
+    set_directory_option(args)
+    with contextlib.ExitStack() as ctx_stack:
+        init_globals(ctx_stack)
+        if not args.tmpdir:
+            args.tmpdir = ctx_stack.enter_context(
+                tempfile.TemporaryDirectory(prefix="ctadl-")
+            )
+        logger.debug("using tmpdir %s", args.tmpdir)
+        if args.directory:
+            chdir(args.directory.resolve())
+            logger.debug("cwd now: %s", os.getcwd())
+        try:
+            args.func(args)
+        except CommandFailure as fail:
+            fail.display_capture_and_exit()
+
+
+if __name__ == "__main__":
+    try:
+        main(sys.argv)
+    except BrokenPipeError:
+        # Python flushes standard streams on exit; redirect remaining output
+        # to devnull to avoid another BrokenPipeError at shutdown
+        devnull = os.open(os.devnull, os.O_WRONLY)
+        os.dup2(devnull, sys.stdout.fileno())
+        sys.exit(1)  # Python exits with error code 1 on EPIPE

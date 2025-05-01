@@ -1,0 +1,22 @@
+(library
+  (name taintlang)
+  (modules parse genFacts syntax lex)
+)
+
+(executable
+  (name taint)
+  (public_name taintfront )
+  (libraries unix taintlang)
+  (modules taint)
+)
+
+(executable
+  (name summarytest)
+  (public_name taintfront-summarytest)
+  (libraries unix taintlang)
+  (modules summarytest)
+)
+
+(ocamllex Lex)
+
+(menhir (modules Parse))

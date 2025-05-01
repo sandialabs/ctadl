@@ -1,0 +1,150 @@
+.type Variable = Formal { a: number }
+               | Local { l: symbol }
+               | CallArg { id: number, formal: number }
+
+.type Path = symbol
+
+// function-local analysis results
+.decl Locals(
+  fn: symbol,
+  var: Variable,
+  lhs_path: Path,
+  formal: number,
+  rhs_path: Path
+)
+
+// function summary
+// This projects out all local variables from the locals results.
+// What remains are relations between (formal, path) pairs.  The
+// summary is, in effect,
+//      (lhs_formal, lhs_path) := (rhs_formal, rhs_path)
+.decl Summary(
+  fn: symbol,
+  lhs_formal: number,
+  lhs_path: Path,
+  rhs_formal: number,
+  rhs_path: Path
+)
+Summary(fn, lhs_formal, lhs_path, rhs_formal, rhs_path) :-
+  Locals(fn, $Formal(lhs_formal), lhs_path, rhs_formal, rhs_path).
+
+// set of syntactic access paths
+.decl Paths(path: Path)
+
+// syntactic assignments
+.decl Assign(
+  fn: symbol,
+  lhs_var: Variable,
+  lhs_path: Path,
+  rhs_var: Variable,
+  rhs_path: Path
+)
+.input Assign
+
+// syntactic assignments and assignments generated from function summary
+// application
+.decl AssignLike(
+  fn: symbol,
+  lhs_var: Variable,
+  lhs_path: Path,
+  rhs_var: Variable,
+  rhs_path: Path
+)
+
+AssignLike(fn, lhs_var, lhs_path, rhs_var, rhs_path) :-
+  Assign(fn, lhs_var, lhs_path, rhs_var, rhs_path).
+
+// direct calls
+.decl DCall(
+  fn: symbol,
+  tgt: symbol,
+  n: number,
+  arg_var: Variable,
+  arg_path: Path,
+  call_id: number
+)
+.input DCall
+
+// function formals
+.decl Formal(
+  fn: symbol,
+  n: number
+)
+.input Formal
+
+// compute all valid syntactic access paths
+Paths(path) :- Assign(_, _, path, _, _).
+Paths(path) :- Assign(_, _, _, _, path).
+Paths(path) :- DCall(_, _, _, _, path, _).
+
+// initialize locals with formals
+Locals(f, $Formal(n), "", n, "") :- Formal(f, n).
+
+// get a suffix of a path given a path and a prefix
+.decl MatchPrefix(to_split: Path, prefix: Path, suffix: Path) inline
+MatchPrefix(to_split, prefix, suffix) :-
+  substr(to_split, 0, strlen(prefix)) = prefix,
+  suffix = substr(to_split, strlen(prefix), strlen(to_split) - strlen(prefix)).
+
+
+// assignment if rhs is a prefix of a known path
+// this extends the post-condition
+//   <v1, p1> := <v2, p2>
+//     if <v2, p23> -> <a, p4>
+//     and p23 == p2 ++ p3
+//     then <v1, p1 ++ p3> -> <a, p4>
+// example:
+//   assume x.foo -> $1.bar
+//   assign y.baz := x
+//   result y.baz.foo -> $1.bar
+Locals(f, v1, p13, a, p4) :-
+  AssignLike(f, v1, p1, v2, p2),
+  Locals(f, v2, p23, a, p4),
+  MatchPrefix(p23, p2, p3),
+  p13 = cat(p1, p3),
+  Paths(p13).
+
+// assignment if a known path is a prefix of rhs
+// this extends the pre-condition
+//   <v1, p1> := <v2, p2 ++ p3>
+//     if <v2, p2> -> <a, p4>
+//     then <v1, p1> -> <a, p4 ++ p3>
+// example:
+//   assume x.foo -> $1.bar
+//   assign y := x.foo.baz
+//   result y -> $1.bar.baz
+Locals(f, v1, p1, a, p43) :-
+  AssignLike(f, v1, p1, v2, p23),
+  Locals(f, v2, p2, a, p4),
+  MatchPrefix(p23, p2, p3),
+  p43 = cat(p4, p3),
+  Paths(p43).
+
+
+// compute assignments from function calls
+AssignLike(fn, $CallArg(callid, i), "", v, p),
+AssignLike(fn, v, p, $CallArg(callid, i), "") :-
+  DCall(fn, _, i, v, p, callid).
+
+// using a summary, propagate appropriate assignments
+AssignLike(fn, lhs_var, lhs_path, rhs_var, rhs_path) :-
+  Summary(tgt, out_formal, lhs_path, in_formal, rhs_path),
+  DCall(fn, tgt, _, _, _, callid),
+  lhs_var = $CallArg(callid, out_formal),
+  rhs_var = $CallArg(callid, in_formal).
+
+
+// output relation
+// this is just Summary but pruned to eliminate the boring entries
+.decl Output(
+  fn: symbol,
+  lhs_formal: number,
+  lhs_path: Path,
+  rhs_formal: number,
+  rhs_path: Path
+)
+.output Output
+
+Output(fn, lhs_formal, lhs_path, rhs_formal, rhs_path) :- 
+  Summary(fn, lhs_formal, lhs_path, rhs_formal, rhs_path),
+  (lhs_formal != rhs_formal; lhs_path != rhs_path).

@@ -1,0 +1,10 @@
+F(y, p) {
+  y.g(p);
+}
+def Main() {
+  s = source(Thing);
+  // pass a field of the thing
+  x.f.g = allocsite;
+  t = F(x.f, s);
+  sink(t, Thing);
+}

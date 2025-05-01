@@ -1,0 +1,32 @@
+// Implements a pcode query.
+// Here we don't specify sources and sinks; includers do that. We load the
+// PCODE facts and the map of vertex PC addresses. We also define macros that
+// make it easier for includers to define sources and sinks.
+
+#include "macros.dl"
+// load original pcode facts
+#include "pcode/types.dl"
+#include "pcode/declarations.dl"
+#include "pcode/importdb.dl"
+
+
+#ifndef PCODE_DISABLE_TAINT
+
+#include "information-flow/query.dl"
+
+#endif // PCODE_DISABLE_TAINT
+
+#define ReturnArgIndex (-1)
+
+#define TaintSourceArg(label, method, n) \
+    TaintSourceMethodArg(label, n, fid) :- \
+        (f = method; f = cat("_", method)), \
+        CFunction_Name(fid, f), \
+        CisFunction(fid)
+
+#define TaintSinkArg(label, method, n) \
+    LeakingSinkMethodArg(label, n, fid) :- \
+        (f = method; f = cat("_", method)), \
+        CFunction_Name(fid, f), \
+        CisFunction(fid)
+

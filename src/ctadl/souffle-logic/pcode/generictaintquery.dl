@@ -1,0 +1,6 @@
+// Generic taint query for pcode uses sources and sinks common to C languages.
+
+#include "taintquery.dl"
+#include "../common/c-src-sink.dl"
+
+.pragma "suppress-warnings" "TaintSourceMethod,TaintSourceCallArg,LeakingSinkMethod,TaintTransferCallArg,TaintTransferCallArgs,SuspiciousTaintTransferCallArg,TaintSanitizeEdge,CInsn_ModelAssign"

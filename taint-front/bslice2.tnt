@@ -1,0 +1,19 @@
+def process_get(fname, connfd) {
+  x = fname;
+  sink(x, File);
+}
+
+def F() {
+    process_get(othername, fd);
+}
+
+def main(p1, p2, p3) {
+  fd = source(File);
+  command = source(Network);
+  fname = source(Network);
+
+  // if command == GET
+  command = GET;
+  process_get(fname, fd);
+  F();
+}

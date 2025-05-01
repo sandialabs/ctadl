@@ -1,0 +1,33 @@
+#include <macros.dl>
+#include <taint-front/types.dl>
+#include <taint-front/macros.dl>
+#include <taint-front/declarations.dl>
+#include <taint-front/importdb.dl>
+
+// ---------------------------------------------------------------------------
+// phase 2
+
+#ifndef TAINT_FRONT_DISABLE_TAINT
+
+#include <information-flow/query.dl>
+
+TaintSourceVertex(label, v, p) :-
+    TaintSpec("source", iv, ip, label, fid, _, _, _),
+    TaintFront_MkVar(fid, iv, v, tp),
+    p = cat(tp, ip).
+
+LeakingSinkVertex(label, v, p) :-
+    TaintSpec("sink", iv, ip, label, fid, _, _, _),
+    TaintFront_MkVar(fid, iv, v, tp),
+    p = cat(tp, ip).
+
+TaintSanitizeEdge(label, v1, p1, v2, p2) :-
+    TaintSpec("sanitize", iv1, ip1, label, fid, _, iv2, ip2),
+    TaintFront_MkVar(fid, iv1, v1, tp1),
+    p1 = cat(tp1, ip1),
+    TaintFront_MkVar(fid, iv2, v2, tp2),
+    p2 = cat(tp2, ip2).
+
+#endif // TAINT_FRONT_DISABLE_TAINT
+
+.pragma "suppress-warnings" "TaintSourceMethod,TaintSourceCallArg,LeakingSinkMethod,LeakingSinkCallArg,LeakingSinkCallArg,TaintTransferCallArgs,TaintTransferCallArg,SuspiciousTaintTransferCallArg"

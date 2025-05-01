@@ -1,0 +1,410 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/SandiaLabs/ctadl/ctadl-model-generator.schema.json",
+  "title": "Model Generator",
+  "description": "CTADL model generator schema",
+  "$defs": {
+    "where-constraint": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "constraint": {
+              "description": "Matches on function and variable names",
+              "type": "string",
+              "enum": ["name"]
+            },
+            "pattern": {
+              "description": "Regular expression pattern matches name",
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "constraint": {
+              "description": "Matches on function signatures",
+              "type": "string",
+              "enum": ["signature_match"]
+            },
+            "name": {
+              "description": "Name of function",
+              "type": "string"
+            },
+            "names": {
+              "description": "Names of functions",
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "parent": {
+              "description": "Parent class matches signature",
+              "type": "string"
+            },
+            "parents": {
+              "description": "Parent class matches signature",
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "extends": {
+              "description": "Matches against base class of method",
+              "type": ["string", "array"],
+              "items": { "type": "string" }
+            },
+            "unqualified-id": {
+              "description": "Matches exactly with the unqualified-id of the method",
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "constraint": {
+              "description": "Matches on function signatures",
+              "type": "string",
+              "enum": ["signature", "signature_pattern"]
+            },
+            "pattern": {
+              "description": "Signature matches pattern",
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "constraint": {
+              "description": "Match on namespace parent of function/class",
+              "type": "string",
+              "enum": ["parent"]
+            },
+            "inner": {
+              "description": "Inner constraint on namespace",
+              "$ref": "#/$defs/where-constraint"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "constraint": {
+              "description": "Thing extends a namespace (class)",
+              "type": "string",
+              "enum": ["extends"]
+            },
+            "inner": {
+              "description": "Inner constraint",
+              "$ref": "#/$defs/where-constraint"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "constraint": {
+              "description": "Thing to match on",
+              "type": "string",
+              "enum": ["parameter"]
+            },
+            "idx": {
+              "description": "Index of parameter",
+              "type": "integer"
+            },
+            "inner": {
+              "description": "Constraint on parameter",
+              "$ref": "#/$defs/where-constraint"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "constraint": {
+              "description": "Thing to match on",
+              "type": "string",
+              "enum": ["any_parameter"]
+            },
+            "start_idx": {
+              "description": "Start index",
+              "type": "integer"
+            },
+            "inner": {
+              "description": "Inner constraint on parameter",
+              "$ref": "#/$defs/where-constraint"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "constraint": {
+              "description": "Matches on whether function has code",
+              "type": "string",
+              "enum": ["has_code"]
+            },
+            "value": {
+              "description": "True or false",
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "constraint": {
+              "description": "Matches on number of parameters",
+              "type": "string",
+              "enum": ["number_parameters"]
+            },
+            "inner": {
+              "description": "Inner Integer constraint on parent",
+              "$ref": "#/$defs/where-constraint"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "constraint": {
+              "description": "Compares to an integer",
+              "type": "string",
+              "enum": ["<", "<=", ">", ">=", "!=", "=="]
+            },
+            "value": {
+              "description": "Compares input integer to this value",
+              "type": "integer"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "constraint": {
+              "description": "Matches on any/all of the inner constraints",
+              "type": "string",
+              "enum": ["any_of", "all_of"]
+            },
+            "inners": {
+              "description": "Regular expression pattern matches name",
+              "type": "array",
+              "items": { 
+                "$ref": "#/$defs/where-constraint"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "constraint": {
+              "description": "Describes things that should not match",
+              "type": "string",
+              "enum": ["not"]
+            },
+            "inner": {
+              "description": "Regular expression pattern matches name",
+              "$ref": "#/$defs/where-constraint"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "constraint": {
+              "description": "Uses a field",
+              "type": "string",
+              "enum": ["uses_field"]
+            },
+            "name": {
+              "description": "Name of field",
+              "type": "string"
+            },
+            "names": {
+              "description": "Names of fields",
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "unqualified-id": {
+              "description": "Matches exactly with the unqualified-id of the field",
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "port-spec": {
+      "type": "string",
+      "anyOf": [
+        { "pattern": "^Argument\\((-?[0-9]+|\\*)\\)" },
+        { "pattern": "^Return" }
+      ]
+    },
+    "field-spec": {
+      "type": "string",
+      "pattern": "^([.][^.]+)*"
+    },
+    "source-sink-model": {
+      "description": "Models associated SUT element as a source or a sink",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "description": "The taint label (your choice) to associate with the source/sink",
+          "type": "string", "minLength": 1 },
+        "port": {
+          "description": "The part of the matched SUT element to designate as source/sink",
+          "$ref": "#/$defs/port-spec"
+        },
+        "field": {
+          "description": "The field of the matched variable to designate as source/sink",
+          "$ref": "#/$defs/field-spec"
+        },
+        "fields": {
+          "description": "The fields of the matched variable to designate as source/sink",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/field-spec"
+          }
+        },
+        "all_fields": {
+          "description": "If true, sensitizes the port to all detected fields by name. Any fields referred to in the port itself are ignored. This feature will likely be removed in favor of simple star matching in future.",
+          "type": "boolean"
+        }
+      }
+    },
+    "propagation-model": {
+      "description": "Models a method with a propagation",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "input": {
+          "description": "Port of propagation input",
+          "$ref": "#/$defs/port-spec"
+        },
+        "output": {
+          "description": "Port of propagation output",
+          "$ref": "#/$defs/port-spec"
+        }
+      }
+    },
+    "call-model": {
+      "description": "Models a callsite by forwarding to another function",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "receiver": {
+          "description": "Receiver for virtual callee. Omit for direct call",
+          "$ref": "#/$defs/port-spec"
+        },
+        "where": {
+          "description": "Method for callee",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/where-constraint"
+          }
+        }
+      }
+    }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "datalog": {
+      "type": "array",
+      "items": {
+	"type": "string"
+      }
+    },
+    "model_generators": {
+      "description": "List of model generators",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "find": {
+            "description": "The SUT element to match on",
+            "type": "string",
+            "enum": ["methods", "variables", "fields", "instructions"]
+          },
+          "where": {
+            "description": "Matching constraints",
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/where-constraint"
+            }
+          },
+          "model": {
+            "description": "How to model the matched SUT element",
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "sources": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/source-sink-model"
+                }
+              },
+              "sinks": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/source-sink-model"
+                }
+              },
+              "taint": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/source-sink-model"
+                }
+              },
+              "propagation": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/propagation-model"
+                }
+              },
+              "modes": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": ["skip-analysis"]
+                }
+              },
+              "forward_call": {
+                "$ref": "#/$defs/call-model"
+              },
+              "forward_self": {
+                "description": "A forward_self model forwards calls to the matched methods to another method of self, possibly with a different signature. This is used, e.g., to forward ASyncTask.execute to doInBackground on the same object. Only makes sense for object oriented languages, e.g., Java.",
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "where": {
+                    "description": "Constraints on the receiver methods",
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/where-constraint"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,19 @@
+def m1(this, x1, y1) {
+    x1.foo = y1;
+}
+
+def m2(this, x2, y2) {
+    x2.foo = y2;
+}
+
+def Main() {
+  cls_vtbl.m1 = m1;
+  cls_vtbl.m2 = m2;
+  obj.vtbl = cls_vtbl;
+  a0 = source(Network);
+  obj.vtbl.m1(obj, a1, a0);
+  tmp = a1.foo;
+  obj.vtbl.m2(obj, a2, tmp);
+  tmp2 = a2.foo;
+  sink(tmp2, Network);
+}

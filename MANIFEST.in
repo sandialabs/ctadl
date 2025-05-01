@@ -1,0 +1,16 @@
+include src/ctadl/VERSION
+include docs/*.md
+include docs/dev/*.md
+include src/ctadl/models/*.json
+include src/ctadl/models/jadx/*.json
+include src/ctadl/models/pcode/*.json
+include src/ctadl/models/taint-front/*.json
+include src/ctadl/souffle-logic/functors.cpp
+include src/ctadl/souffle-logic/*.dl
+include src/ctadl/souffle-logic/information-flow/*.dl
+include src/ctadl/souffle-logic/match/*.dl
+include src/ctadl/souffle-logic/graph/*.dl
+include src/ctadl/souffle-logic/graph/slice/*.dl
+include src/ctadl/souffle-logic/taint-front/*.dl
+include src/ctadl/souffle-logic/jadx/*.dl
+include src/ctadl/souffle-logic/pcode/*

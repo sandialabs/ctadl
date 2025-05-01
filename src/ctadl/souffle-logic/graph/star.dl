@@ -1,0 +1,156 @@
+//EnableStar() :- false.
+
+// Forward
+
+//A means p13 ="" in AP
+//B means p13 = p23 in AP
+//C means p13 ="" in AP
+isComputedAccessPath(p13),
+VirtualAssign(s, v1, p13, v2, p23, "star1", ctx) :- //D
+    EnableStar(),
+    Vertex(v2, p23),
+    VirtualAssign(s, v1, p1, v2, p2, _ty, ctx),
+    p1 = "",
+    p2 != "",
+    p3 != "",
+    ComputedAccessPathNonEmptySplit(p23, p2, p3),
+    !CisAccessPath(cat(p1,p3)),
+    p13 = cat(p1, STAR),
+    !CVar_isGlobal(v1),
+    !CVar_isGlobal(v2),
+    (v1 != v2; p13 != p23).
+.plan 0: (1, 2, 4, 3), 1: (1, 3, 2, 4), 2: (1, 4, 2, 3)
+//E means p13 = p1 in AP
+isComputedAccessPath(p13),
+VirtualAssign(s, v1, p13, v2, p23, "star2", ctx) :- //F
+    EnableStar(),
+    Vertex(v2, p23),
+    VirtualAssign(s, v1, p1, v2, p2, _ty, ctx),
+    p1 != "",
+    p2 = "",
+    p3 != "",
+    !contains(STAR, p1),
+    p23 = p3,
+    !CisAccessPath(cat(p1,p3)),
+    p13 = cat(p1, STAR),
+    !CVar_isGlobal(v1),
+    !CVar_isGlobal(v2),
+    (v1 != v2; p13 != p23).
+.plan 1: (1, 3, 2)
+//G means p13 = p1 in AP
+isComputedAccessPath(p13),
+VirtualAssign(s, v1, p13, v2, p23, "star3", ctx) :- //H
+    EnableStar(),
+    Vertex(v2, p23),
+    ComputedAccessPathNonEmptySplit(p23, p2, p3),
+    VirtualAssign(s, v1, p1, v2, p2, _ty, ctx),
+    p1 != "",
+    p2 != "",
+    p3 != "",
+    !contains(STAR, p1),
+    !CisAccessPath(cat(p1,p3)),
+    p13 = cat(p1, STAR),
+    !CVar_isGlobal(v1),
+    !CVar_isGlobal(v2),
+    (v1 != v2; p13 != p23).
+.plan 1: (1, 4, 3, 2), 2: (1, 3, 2, 4)
+
+
+
+// Backward
+
+isComputedAccessPath(p13),
+VirtualAssign(s, v2, p23, v1, p13, "star4", ctx) :- //D
+    EnableStar(),
+    Vertex(v2, p23),
+    VirtualAssign(s, v2, p2, v1, p1, _ty, ctx),
+    p1 = "",
+    p2 != "",
+    p3 != "",
+    ComputedAccessPathNonEmptySplit(p23, p2, p3),
+    !CisAccessPath(cat(p1,p3)),
+    p13 = cat(p1, STAR),
+    !CVar_isGlobal(v1),
+    !CVar_isGlobal(v2),
+    (v1 != v2; p13 != p23).
+.plan 0: (1, 2, 4, 3), 1: (1, 3, 2, 4), 2: (1, 4, 2, 3)
+isComputedAccessPath(p13),
+VirtualAssign(s, v2, p23, v1, p13, "star5", ctx) :- //F
+    EnableStar(),
+    Vertex(v2, p23),
+    VirtualAssign(s, v2, p2, v1, p1, _ty, ctx),
+    p1 != "",
+    p2 = "",
+    p3 != "",
+    !contains(STAR, p1),
+    p23 = p3,
+    !CisAccessPath(cat(p1,p3)),
+    p13 = cat(p1, STAR),
+    !CVar_isGlobal(v1),
+    !CVar_isGlobal(v2),
+    (v1 != v2; p13 != p23).
+.plan 1: (1, 3, 2)
+isComputedAccessPath(p13),
+VirtualAssign(s, v2, p23, v1, p13, "star6", ctx) :- //H
+    EnableStar(),
+    Vertex(v2, p23),
+    ComputedAccessPathNonEmptySplit(p23, p2, p3),
+    VirtualAssign(s, v2, p2, v1, p1, _ty, ctx),
+    p1 != "",
+    p2 != "",
+    p3 != "",
+    !contains(STAR, p1),
+    !CisAccessPath(cat(p1,p3)),
+    p13 = cat(p1, STAR),
+    !CVar_isGlobal(v1),
+    !CVar_isGlobal(v2),
+    (v1 != v2; p13 != p23).
+.plan 1: (1, 4, 3, 2), 2: (1, 3, 2, 4)
+
+#if 0
+//// summary assignment
+isComputedAccessPath(to_path),
+isComputedAccessPath(from_path),
+VirtualAssign(s, to, to_path, from, from_path, "starsummary", ctx) :-
+    EnableStar(),
+    SummaryFlow(m, n1, p1, m, n2, p2, ctx),
+    CallEdge(s, m, ctx),
+    CCall_ActualParam(s, n1, to, to_actual_path),
+    CCall_ActualParam(s, n2, from, from_actual_path),
+    ( !CisAccessPath(cat(to_actual_path, p1)),
+       MatchComputedPrefix(from_path, from_actual_path, p2),
+       to_path = cat(to_actual_path, STAR);
+      !CisAccessPath(cat(from_actual_path, p2)),
+       MatchComputedPrefix(to_path, to_actual_path, p1),
+       from_path = cat(from_actual_path, STAR) ),
+    (to != from; to_path != from_path).
+#ifndef DISABLE_STAR_PLAN
+.plan 1: (6, 2, 1, 3, 4, 5)
+#endif
+
+isComputedAccessPath(to_path),
+isComputedAccessPath(from_path),
+VirtualAssign(s1, to, to_path, from, from_path, "starsummary2", ctx) :-
+    EnableStar(),
+    SummaryFlow(m1, n1, p1, m2, n2, p2, ctx),
+    m1 != m2,
+    CallEdge(s1, m1, ctx),
+    CCall_ActualParam(s1, n1, to, to_actual_path),
+    CallEdge(s2, m2, ctx),
+    CCall_ActualParam(s2, n2, from, from_actual_path),
+    ( !CisAccessPath(cat(to_actual_path, p1)),
+       MatchComputedPrefix(from_path, from_actual_path, p2),
+       to_path = cat(to_actual_path, STAR);
+      !CisAccessPath(cat(from_actual_path, p2)),
+       MatchComputedPrefix(to_path, to_actual_path, p1),
+       from_path = cat(from_actual_path, STAR) ),
+    (to != from; to_path != from_path).
+#ifndef DISABLE_STAR_PLAN
+.plan 1: (7, 2, 3, 1, 4, 5, 6)
+#endif
+#endif
+//      /* 2: (3, 1, 2, 4, 5, 6) */
+
+CTADLStats("virtual-assign-star", n) :- n = count : { VirtualAssign(_, _, _, _, _, "star", "") }.
+CTADLStats("virtual-assign-starsummary", n) :- n = count : { VirtualAssign(_, _, _, _, _, "starsummary", "") }.
+CTADLStats("virtual-assign-starsummary2", n) :- n = count : { VirtualAssign(_, _, _, _, _, "starsummary22", "") }.

@@ -1,0 +1,19 @@
+// propagate in the direction of assignment, "forward"
+VirtualAssign(s, v1, p13, v2, p23, "fp") :-
+    VirtualAssign(s, v1, p1, v2, p2, _ty),
+    Vertex(v2, p23),
+    MatchComputedPrefix(p23, p2, p3),
+    MatchComputedPrefix(p13, p1, p3),
+    !CVar_isGlobal(v2),
+    !CVar_isGlobal(v1),
+    (v1 != v2; p13 != p23).
+
+// propagate in reverse direction of assignment, "backward"
+VirtualAssign(s, v1, p13, v2, p23, "fp") :-
+    VirtualAssign(s, v1, p1, v2, p2, _ty),
+    Vertex(v1, p13),
+    MatchComputedPrefix(p13, p1, p3),
+    MatchComputedPrefix(p23, p2, p3),
+    !CVar_isGlobal(v1),
+    !CVar_isGlobal(v2),
+    (v1 != v2; p13 != p23).

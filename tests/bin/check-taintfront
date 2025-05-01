@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+
+set -e
+set -o pipefail
+set -x
+
+top="$(git rev-parse --show-toplevel)"
+outdir="$top/ctadl-test-output"
+cd $outdir
+
+# Taintfront test
+taintfront $top/taint-front/global2.tnt
+ctadl index -vv -f facts
+ctadl query -vv --format=sarif > global2.sarif
+sarif_has_code_flows.py global2.sarif
+
+# Test --no-compile-analysis
+ctadl index -f --no-compile-analysis facts
+ctadl query --no-compile-analysis --format sarif -o global2.sarif
+sarif_has_code_flows.py global2.sarif
+
+! ctadl index facts2 # index already exists
+! ctadl index -f facts2 # nonexistent facts dir
+rm -f ctadlir.db
+! ctadl query # nonexistent index
+
+# Test without global data flow
+ctadl index -vv -f --no-interprocedural-data-flow facts
+ctadl export --format gml > global2.gml
+ctadl query --format sarif > global2.sarif
+! sarif_has_code_flows global2.sarif
+  
+
+taintfront $top/taint-front/compositional-ctx.tnt
+ctadl index -f facts
+python3 $top/tests/test_ctadlir.py $top/tests/taint_front_compositional_ctx.json
+
+taintfront $top/taint-front/compositional-ctx2.tnt
+ctadl index -f facts
+python3 $top/tests/test_ctadlir.py $top/tests/taint_front_compositional_ctx2.json
+
+taintfront $top/taint-front/compositional-ctx4.tnt
+ctadl index -f facts
+python3 $top/tests/test_ctadlir.py $top/tests/taint_front_compositional_ctx4.json
+
+taintfront $top/taint-front/indirect1.tnt
+ctadl index -f facts
+ctadl query
+python3 $top/tests/test_ctadlir.py $top/tests/taint_front_indirect1.json
+
+taintfront $top/taint-front/global1.tnt
+ctadl index -f facts
+ctadl query
+python3 $top/tests/test_ctadlir.py $top/tests/taint_front_global1.json

@@ -1,0 +1,489 @@
+#pragma once
+
+#include <ctadl_ir_types.dl>
+
+// To indicate that some unspecified subfield is tainted, we terminate an
+// access path with a STAR. it's defined this way because then it works with
+// souffle's match operator so the field name is '.*' and the first period is
+// the field separator
+#define STAR "..*"
+
+// CTADL Intermediate Representation (IR) schema
+// ----------------------------------------------------------------------------
+
+// CTADL analysis a system under test (SUT) given in CTADL IR. All the IR
+// relations start with "C" and roughly have a prefix relating to the kind of
+// SUT element involved: CVar relates to variables, CInsn to instructions,
+// CFunction to functions, and so on.
+//
+// Types:
+// - CInsn: instruction id
+// - CVar: variable id
+// - CFunction: function id
+// - CAccessPath: field access path (e.g., ".foo.bar")
+// - CFunctionInvocation: alias of CInsn
+//
+// Constraints:
+//
+// Instruction, variable, and function ids must be globally unique. The ids
+// function as primary keys in tables that define the corresponding
+// entity. Primary keys ares:
+//
+// - CInsn_InFunction(insn)
+// - CVar_InFunction(var), CVar_isGlobal(var)
+// - CisFunction(function)
+// - CisAccessPath(ap)
+// - CisNamespace(name)
+//
+// Therefore:
+// - Any CInsn is a foreign key into the CInsn_InFunction table
+// - Any CVar is a foreign key into the CVar_InFunction table or the CVar_isGlobal table
+// - Any CFunction is a foreign key into the CisFunction table
+// - Any CAccessPath is a (optional) foreign key into the CisAccessPath table
+//
+// The tables above define the corresponding entity. The constraints below must
+// be followed for the program that CTADL is to analyze to be well-defined:
+// - Instructions must occur in exactly one function in CInsn_InFunction.
+// - Variables must occur in at most one function in CVar_InFunction; if
+// they're not in a function, they must be CVar_IsGlobal.
+// - Functions must be in CisFunction.
+// - Every namespace must be in CisNamespace.
+// - There are no constraints on CisAccessPath. The analysis is parameterized
+// by CisAccessPath, so that you get potentially different results by altering
+// CisAccessPath.
+//
+// ---------------------------------------------------------------------------
+//
+// Each data flow graph vertex is a pair of CVar and CAccessPath. To keep our
+// schema simpler, we don't represent vertices as Souffle pairs; instead, every
+// relation that uses vertices uses two columns to represent each vertex. An
+// assignment like x.foo := y.bar is represented on vertices ("x", ".foo") and
+// ("y", ".bar") internally.
+//
+// Instructions are either data moves or function calls. Moves are modeled with
+// CInsn_Move, which associates an instruction with source and destination
+// vertices. Branch instructions in the source language can be represented by
+// just their vertices, using CInsn_Use.
+//
+// Function calls are represented with CCall_ActualParam, a relation
+// associating an instruction with a set of actual parameters, the parameters
+// occurring at a call site. Statically resolvable calls can be put in
+// CInsn_Call.
+// 
+// Virtual and indirect calls go into CCall_VirtualBase, tagging
+// the argument which determines how to resolve the call. Allocation sites are
+// used by the analysis to resolve these types of calls; they are represented
+// with CisAlloc. Think of allocation sites as either a concrete object
+// allocation or function pointer assignment.
+//
+// Function parameters are recorded in CFunction_FormalParam. Parameters are
+// pass-by-value by default but can be by-reference if tagged by
+// CFunction_isFormalParamByRef. The arity is recorded in CFunction_Arity. Note
+// that it is not an error for parameters to be missing, or non-contiguous, or
+// even for the arity to be missing, or for there to be different numbers of
+// actuals than formals.
+//
+// Return values are modeled with by-reference parameters at a special index,
+// the index in CReturnParameter.
+//
+// Global variables can be modeled as fields of another special parameter,
+// CGlobalParameter.
+
+// Relations defining the program analysis
+// ---------------------------------------------------------------------------
+
+// Assignment from vertex (from, from_path) to (to, to_path)
+.decl CInsn_Move(insn: CInsn, to: CVar, to_path: CAccessPath, from: CVar, from_path: CAccessPath)
+// Virtual call site receiver. Index corresponds to actual parameter index.
+// Models `foo.virtualCall()` and function ptr invocation `x = ...; x(...)`.
+.decl CCall_VirtualBase(insn: CFunctionInvocation, index: number)
+// Call site parameter. Actual index corresponds to formal index.
+.decl CCall_ActualParam(insn: CFunctionInvocation, index: number, param: CVar, ap: CAccessPath)
+// Instruction at index in function. Index is used to display results in a
+// sensible order.
+.decl CInsn_InFunction(insn: CInsn, index: number, function: CFunction)
+
+// CisAlloc is used to model `new Foo()` and `x = funcptr`. We could have used
+// an insn for the allocs. but we don't require this because we are primarily
+// concerned with data flow. a common case is that some target language defines
+// a location for an object then copies that location elsewhere. CisAlloc can
+// be used on the original location without having to synthesize a
+// "constructor" instruction.
+.decl CisAlloc(to: CVar, to_path: CAccessPath, obj: symbol)
+// Use of access path (see discussion above).
+.decl CInsn_Use(v: CVar, p: CAccessPath)
+// Function declaration.
+.decl CisFunction(function: CFunction)
+// Function arity.
+.decl CFunction_Arity(function: CFunction, arity: number)
+// Function formal parameter. Formal index corresponds to call site actual
+// index.
+.decl CFunction_FormalParam(function: CFunction, index: number, param: CVar)
+// Marks a parameter as pass-by-reference, i.e., flows come out.
+.decl CFunction_isFormalParamByRef(function: CFunction, index: number)
+// Static call to a function.
+.decl CInsn_Call(insn: CFunctionInvocation, function: CFunction)
+// Every field access path.
+.decl CisAccessPath(ap: CAccessPath)
+// Function where local variable resides.
+.decl CVar_InFunction(var: CVar, function: CFunction)
+// Global variables.
+.decl CVar_isGlobal(var: CVar)
+
+// Frontends populate this
+.decl IndirectCallResolventFunction(indirect_call: symbol, obj: symbol, function: CFunction)
+
+// Relations customizing the analysis
+// ---------------------------------------------------------------------------
+
+// Any summaries for these functions are not included in the analysis.
+.decl CFunction_OmitSummaries(function: CFunction)
+
+// Relations affecting modeling and reporting of results
+// ---------------------------------------------------------------------------
+
+// Dataflow only instructions have no corresponding source location and only
+// serve to connect data flow, e.g., phi nodes in ssa. such instructions can
+// safely be elided when displaying results.
+.decl CInsn_isDataflowOnly(insn: CInsn)
+
+// Records a short name for each variable.
+.decl CVar_Name(var: CVar, name: symbol)
+
+// Function name
+.decl CFunction_Name(function: CFunction, name: symbol)
+// Function signature
+.decl CFunction_Signature(function: CFunction, signature: symbol)
+// The index of formal/actual parameter representing return values.
+.decl CReturnParameter(n: number)
+// The index of the formal/actual parameter representing globals.
+.decl CGlobalParameter(n: number)
+// A way to record individual fields
+.decl CisField(field: CAccessPath)
+// Name of a field
+.decl CField_Name(field: CAccessPath, name: symbol)
+// Namespace declaration
+.decl CisNamespace(name: symbol)
+// Parent of a given namespace
+.decl CNamespace_Parent(child: symbol, parent: symbol)
+// Type of vertex, may be multiple
+.decl CVar_Type(var: CVar, path: CAccessPath, type: symbol)
+// Subtype is a subtype of supertype
+.decl CType_Subtype(subtype: symbol, supertype: symbol)
+// In squeeze mode, these calls are considered not suspicious.
+.decl CInsn_UnsuspiciousCall(insn: CFunctionInvocation, function: CFunction)
+
+// Source location schema
+// ---------------------------------------------------------------------------
+
+// The only source info key we use rigt now is "name" which records the source
+// name of a function or variable, if present.
+#define SOURCE_INFO_NAME_KEY "name"
+// "name": source name after being possibly renamed during decompilation
+.decl CFunction_SourceInfo(function: CFunction, key: symbol, value: symbol)
+.decl CInsn_SourceInfo(insn: CInsn, key: symbol, value: symbol)
+.decl CVar_SourceInfo(var: CVar, key: symbol, value: symbol)
+
+// Associates a function, variable, or instruction with a file and a region.
+// file_id refers to CSourceInfo_File and CFile_UriBaseId.
+// region_id refers to line, char, byte, address regions.
+.decl CSourceInfo_Location(element: symbol, file_id: number, region_id: number)
+
+// File information. Referred to by file_id of CSourceInfo_Location.
+.decl CSourceInfo_File(id: number, uri: symbol)
+.decl CFile_UriBaseId(id: number, uriBaseId: symbol)
+
+// Location regions. referred to by region_id of CSourceInfo_Location.
+// SARIF 3.30.5
+.decl CSourceInfo_LineRegion(id: number, startLine: number)
+// SARIF 3.30.6
+.decl CLineRegion_StartColumn(id: number, startColumn: number)
+// SARIF 3.30.7
+.decl CLineRegion_EndLine(id: number, endLine: number)
+// SARIF 3.30.8
+.decl CLineRegion_EndColumn(id: number, endColumn: number)
+
+// SARIF 3.30.9
+.decl CSourceInfo_CharRegion(id: number, charOffset: number)
+// SARIF 3.30.10
+.decl CCharRegion_Length(id: number, charLength: number)
+
+// SARIF 3.30.11
+.decl CSourceInfo_ByteRegion(id: number, byteOffset: number)
+// SARIF 3.30.12
+.decl CByteRegion_Length(id: number, byteLength: number)
+
+.decl CSourceInfo_Address(id: number)
+// SARIF 3.32.6
+.decl CAddress_AbsoluteAddress(id: number, addr: number)
+// SARIF 3.32.7
+.decl CAddress_RelativeAddress(id: number, addr: number)
+// SARIF 3.32.8
+.decl CAddress_OffsetFromParent(id: number, offset: number)
+// SARIF 3.32.9
+.decl CAddress_Length(id: number, length: number)
+// SARIF 3.32.10
+.decl CAddress_Name(id: number, name: symbol)
+// SARIF 3.32.11
+.decl CAddress_FullyQualifiedName(id: number, fullyQualifiedName: symbol)
+// SARIF 3.32.12
+.decl CAddress_Kind(id: number, kind: symbol)
+// SARIF 3.32.13
+.decl CAddress_Parent(id: number, parent_id: number)
+
+// Modeling
+// ---------------------------------------------------------------------------
+
+// Function model: calling function_from and function_to makes params flow. The
+// common case is parameter flows to return value; just use function_from =
+// function_to.
+.decl CFunction_ModelAssign(
+    function_to: CFunction, param_to: number, ap_to: CAccessPath,
+    function_from: CFunction, param_from: number, ap_from: CAccessPath
+)
+
+// Models an instruction with a flow.
+.decl CInsn_ModelAssign(
+    insn: CInsn,
+    var_to: CVar, to_ap: CAccessPath,
+    var_from: CVar, from_ap: CAccessPath,
+    assign_type: symbol
+)
+
+// The following two models result in wildcard (STAR) assignments.
+
+// Function model: calling function results in a flow from a wildcard to a
+// vertex.
+.decl CFunction_ModelInfluenceFrom(
+    function: CFunction,
+    to_param: number, to_ap: CAccessPath,
+    from_param: number, from_ap: CAccessPath
+)
+
+// Function model: calling a function results in a flow from a vertex to a
+// wildcard.
+.decl CFunction_ModelInfluenceTo(
+    function: CFunction,
+    to_param: number, to_ap: CAccessPath,
+    from_param: number, from_ap: CAccessPath
+)
+
+
+// Records various statistics.
+.decl CTADLStats(stat_name: symbol, n: number)
+.output CTADLStats(CTADL_OUTPUT_DB_IO)
+
+// Specifies configuration of the analysis.
+// 
+// - CTADL_Version: versions string
+// - CTADL_ENABLE_STAR
+// - CTADL_ENABLE_HYBRID_INLINING
+// - CTADL_ENABLE_HYBRID_INLINING_K_INLINING_SENSITIVITY
+// - CTADL_HYBRID_INLINING_K_INLINING_SIZE
+// - CTADL_ENABLE_HYBRID_INLINING_K_CONTEXT_SENSITIVITY
+// - CTADL_HYBRID_INLINING_K_CONTEXT_SIZE
+// - CTADL_HYBRID_INLINING_ADD_PARTHIANS_TO_VERTEX
+// - CTADL_ENABLE_CHA
+// - CTADL_ENABLE_CONTEXT_FREE_OBJECT_TRACKING
+// - CTADL_DISABLE_GLOBAL_DATA_FLOW
+// - CTADL_DYNAMIC_ACCESS_PATHS_MAX_LENGTH
+.decl CTADLConfig(feature: symbol, value: symbol)
+
+
+// Any message that is put here will be flagged after an 'index' or 'query'.
+.decl CTADLError(msg: symbol)
+.output CTADLError(CTADL_OUTPUT_DB_IO)
+
+// Measured statistics
+
+.decl CTADLStats_AnalyzedFunction(m: CFunction)
+CTADLStats_AnalyzedFunction(m) :- CInsn_InFunction(_, _, m).
+
+#ifndef CTADL_NO_STATS
+CTADLStats("CInsn_Move", n) :- n = count : { CInsn_Move(_, _, _, _, _) }.
+CTADLStats("CInsn_Use", n) :- n = count : { CInsn_Use(_, _) }.
+CTADLStats("CInsn_Call", n) :- n = count : { CallEdge(_, _, _) }.
+CTADLStats("CisFunction", n) :- n = count : { CisFunction(_) }.
+CTADLStats("CFunction_Name", n) :- n = count : { CFunction_Name(_, _) }.
+CTADLStats("CFunction_Arity", n) :- n = count : { CFunction_Arity(_, _) }.
+CTADLStats("CFunction_FormalParam", n) :- n = count : { CFunction_FormalParam(_, _, _) }.
+CTADLStats("CFunction_isFormalParamByRef", n) :- n = count : { CFunction_isFormalParamByRef(_, _) }.
+CTADLStats("CFunction_ModelAssign", n) :- n = count : { CFunction_ModelAssign(_, _, _, _, _, _) }.
+CTADLStats("CCall_ActualParam", n) :- n = count : { CCall_ActualParam(_, _, _, _) }.
+CTADLStats("CisAccessPath", n) :- n = count : { CisAccessPath(_) }.
+CTADLStats("CInsn_InFunction", n) :- n = count : { CInsn_InFunction(_, _, _) }.
+CTADLStats("CVar_InFunction", n) :- n = count : { CVar_InFunction(_, _) }.
+CTADLStats("CVar_isGlobal", n) :- n = count : { CVar_isGlobal(_) }.
+CTADLStats("CVar_Name", n) :- n = count : { CVar_Name(_, _) }.
+CTADLStats("analyzed-function", n) :- n = count : { CTADLStats_AnalyzedFunction(_) }.
+CTADLStats("CisAlloc", n) :- n = count : { CisAlloc(_, _, _) }.
+CTADLStats("CCall_VirtualBase", n) :- n = count : { CCall_VirtualBase(_, _) }.
+#endif
+
+// Rules to check IR invariants
+
+CTADLError(msg) :-
+    CisFunction(f),
+    !CFunction_Name(f, _),
+    msg = cat("Function with no name: ", f).
+
+CTADLError(msg) :-
+    (   CInsn_InFunction(_, _, f), ref = "CInsn_InFunction"
+    ;   CFunction_Arity(f, _), ref = "CFunction_Arity"
+    ;   CFunction_FormalParam(f, _, _), ref = "CFunction_FormalParam"
+    ;   CFunction_isFormalParamByRef(f, _), ref = "CFunction_isFormalParamByRef"
+    ;   CInsn_Call(_, f), ref = "CInsn_Call"
+    ;   CVar_InFunction(_, f), ref = "CVar_InFunction"),
+    !CisFunction(f),
+    msg = cat("Reference from '", ref, "' to non-existent function: ", f).
+
+CTADLError(msg) :-
+    (   CInsn_Move(i, _, _, _, _), kind = "move"
+    ;   CCall_VirtualBase(i, _), kind = "virtual-base"
+    ;   CCall_ActualParam(i, _, _, _), kind = "actual"
+    ;   CInsn_Call(i, _), kind = "call" ),
+    !IntCInsn_InFunction(i, _, _),
+    msg = cat("Instruction ", kind, " not inside function: ", i).
+
+CTADLError(msg) :-
+    IntCInsn_InFunction(i, _, f1),
+    IntCInsn_InFunction(i, _, f2),
+    f1 != f2,
+    msg = cat("Instruction in two functions, '", f1, "' and '", f2, "': ", i).
+
+CTADLError(msg) :-
+    (   CInsn_Move(_, v, _, _, _), kind = "move"
+    ;   CInsn_Move(_, _, _, v, _), kind = "move"
+    ;   CisAlloc(v, _, _), kind = "alloc"
+    ;   CInsn_Use(v, _), kind = "use"
+    ;   CFunction_FormalParam(_, _, v), kind = "formal"
+    ;   CCall_ActualParam(_, _, v, _), kind = "actual" ),
+    !CVar_InFunction(v, _),
+    !CVar_isGlobal(v),
+    msg = cat("Variable ", kind, " neither function or global: ", v).
+
+CTADLError(msg) :-
+    CVar_InFunction(v, _),
+    CVar_isGlobal(v),
+    msg = cat("Variable is local and global: ", v).
+
+CTADLError(msg) :-
+    CVar_InFunction(v, _),
+    !CVar_Name(v, _),
+    msg = cat("Variable in function without name: ", v).
+
+CTADLError(msg) :-
+    CVar_InFunction(v, f1),
+    CVar_InFunction(v, f2),
+    f1 != f2,
+    msg = cat("Variable in two functions, '", f1, "' and '", f2, "': ", v).
+
+CTADLError(msg) :-
+    (   CNamespace_Parent(n, _)
+    ;   CNamespace_Parent(_, n)),
+    !CisNamespace(n),
+    msg = cat("Namespace not in CisNamespace: ", n).
+
+// Input generated by the ctadl CLI frontend
+.decl CTADLConfig_Input(feature: symbol, enabled: number)
+.input CTADLConfig_Input
+
+// Taint Analysis Input schema
+// ---------------------------------------------------------------------------
+
+// Taint analysis is specified in terms of source and sink vertices.
+// TaintSourceVertex defines the sources and their labels; LeakingSinkVertex
+// defines the sinks. At least one taint source or sink must be specified in
+// order for the analysis to do any wore.
+//
+// Constraints:
+// - It is best if the source and sink labels are independent. Mixing them can
+// sometimes lead to hard to interpret results, although it does not mess up
+// analysis results.
+
+// inputs
+
+// Tags vertex as a source with a label.
+.decl TaintSourceVertex(tag: SliceLabelType, v: CVar, p: CAccessPath)
+// Tags vertex as a sink with a label.
+.decl LeakingSinkVertex(tag: SliceLabelType, v: CVar, p: CAccessPath)
+// if v.p tainted with tag, don't let data flow across
+.decl TaintSanitizeVertex(tag: SliceLabelType, v: CVar, p: CAccessPath)
+// if v2.p2 is tainted with tag, don't let data flow on edge
+.decl TaintSanitizeEdge(tag: SliceLabelType, v1: CVar, p1: CAccessPath, v2: CVar, p2: CAccessPath)
+
+// prefer to use AllEdge and AllVertex as it gives the most consistent results for users
+
+// if v2.p2 is tainted, don't let data flow on edge
+.decl TaintSanitizeAllEdge(v1: CVar, p1: CAccessPath, v2: CVar, p2: CAccessPath)
+// if v.p tainted, don't let any data flows out
+.decl TaintSanitizeAllVertex(v: CVar, p: CAccessPath)
+
+// ---------------------------------------------------------------------------
+// outputs
+
+// call to unmodeled function with tainted argument
+.decl isTaintedArgUnmodeled(tag: SliceLabelType, function: CFunction, index: number, ap: CAccessPath, direction: symbol)
+
+// CTADL Configuration schema
+// ---------------------------------------------------------------------------
+
+// CTADL is highly configurable and there are a couple of layers to how it's done.
+//
+// The model generators are translated into the input relations below.
+
+
+// Inputs
+.decl MG_OpNode(nodeid: symbol, op: symbol)
+.decl MG_Edge2(nodeid: symbol, child1: symbol, child2: symbol)
+.decl MG_Edge1(nodeid: symbol, child1: symbol)
+.decl MG_AllOf(nodeid: symbol)
+.decl MG_AnyOf(nodeid: symbol)
+.decl MG_Not(nodeid: symbol)
+.decl MG_SigMatchParent(nodeid: symbol, parent: symbol)
+.decl MG_SigMatchPattern(nodeid: symbol, pattern: symbol)
+.decl MG_SigMatchName(nodeid: symbol, name: symbol)
+.decl MG_SigMatchUnqualifiedId(nodeid: symbol, fid: symbol)
+.decl MG_Name(nodeid: symbol, pattern: symbol)
+.decl MG_Parent(nodeid: symbol)
+.decl MG_Extends(nodeid: symbol)
+.decl MG_Parameter(nodeid: symbol, index: number)
+.decl MG_AnyParameter(nodeid: symbol, start_idx: number)
+.decl MG_NumberParameters(nodeid: symbol)
+.decl MG_IntCompare(nodeid: symbol, rel: symbol, value: number)
+.decl MG_HasCode(nodeid: symbol, value: symbol)
+.decl MG_UsesFieldName(nodeid: symbol, name: symbol)
+.decl MG_UsesFieldUnqualifiedId(nodeid: symbol, id: symbol)
+.decl MG_Propagation(
+    nodeid: symbol, propid: symbol, direction: symbol, param: number, is_star: number, ap: CAccessPath
+)
+.decl MG_Endpoint(nodeid: symbol, source_or_sink: symbol, label: symbol)
+.decl MG_EndpointVertex(nodeid: symbol, param: number, is_star: number, ap: CAccessPath, all_fields: symbol)
+.decl MG_EndpointField(nodeid: symbol)
+.decl MG_EndpointInsn(nodeid: symbol)
+// whereid: the forward_self "where" clause id
+.decl MG_ForwardSelf(nodeid: symbol, whereid: symbol)
+.decl MG_ForwardCall(
+    nodeid: symbol, targetid: symbol, forwardid: symbol,
+    // 1 if direct, 0 if indirect. if 0, then param and ap are set
+    isdirect: number,
+    // actual receiver param+ap
+    param: number, ap: symbol)
+.decl MG_CallModel(nodeid: symbol, callerid: symbol)
+.decl MG_SliceDirection(dir: symbol)
+
+// The "eval" relations produce the answers specified by model generations.
+// FuncEval produces a set of filtered functions.
+// NameEval produces a set of filtered strings.
+// NumberEval produces a set of filtered numbers.
+
+.decl MG_FuncEval(nodeid: symbol, fid: CFunction)
+.decl MG_VarEval(nodeid: symbol, vid: CVar)
+.decl MG_FieldEval(nodeid: symbol, field: CAccessPath)
+.decl MG_InsnEval(nodeid: symbol, insn: CInsn)
+.decl MG_NameEval(nodeid: symbol, name: CFunction)
+.decl MG_NumberEval(nodeid: symbol, num: number)
+.decl MG_SuppliesName(nodeid: symbol, name: symbol)
+.decl MG_SuppliesNumber(nodeid: symbol, num: number)
+
+#include <config.dl>

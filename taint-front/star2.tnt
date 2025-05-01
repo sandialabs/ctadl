@@ -1,0 +1,13 @@
+// this example uses the backward star rule.
+
+// SummaryFlow: ret <- p.f.*
+def A(p) {
+    a = p.f;
+    return a.g;
+}
+
+def B(p) {
+    a.g = p;
+    x.f = a;
+    return x;
+}

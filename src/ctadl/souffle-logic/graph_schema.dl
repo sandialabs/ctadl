@@ -1,0 +1,49 @@
+// depends on ctadl_ir_types
+
+// Our dataflow analysis is compositional and summary-based.
+// Graphs for each function are defined on Vertex and VirtualAssign.
+
+// A vertex in the graph.
+.decl Vertex(var: CVar, path: CAccessPath)
+
+// A possibly-derived data flow edge between two verices. Each corresponds to
+// some instruction from the program. The reason is there to aid debugging. The
+// ctx is the context of the flow; if the flow only happens due to some chain
+// of function calls, that is recorded in the context.
+// VirtualAssign contains all data flow edges implied by field propagation
+// starting with CInsn_Move edges.
+.decl VirtualAssign(
+    insn: CInsn,
+    v1: CVar, p1: CAccessPath, v2: CVar, p2: CAccessPath,
+    reason: symbol,
+    ctx: symbol
+)
+#ifndef CTADL_DISABLE_CHOICE
+choice-domain (v1, p1, v2, p2, ctx)
+#endif
+
+// Derived call edge.
+.decl CallEdge(insn: CFunctionInvocation, function: CFunction, ctx: symbol)
+
+// A generic data flow summary between parameters of functions. method m2 flows
+// parameter n2.p2 to method m1, parameter n1.p1 summaries are general: one
+// method parameter (+ ap) may flow to a distinct method and parameter (+ ap).
+// the flow between methods occurs due to globals.
+.decl SummaryFlow(
+    m1: CFunction, n1: number, p1: CAccessPath,
+    m2: CFunction, n2: number, p2: CAccessPath,
+    ctx: symbol
+)
+
+// VirtualAlloc contains all derived vertices that point to obj beginning with
+// CisAlloc.
+.decl VirtualAlloc(to: CVar, to_path: CAccessPath, obj: symbol, ctx: symbol)
+
+// An allocation summary. Function f produces object in formal n.p.
+.decl SummaryAlloc(
+    f: CFunction, n: number, p: CAccessPath, obj: symbol, ctx: symbol
+)
+
+// In the given context, the object flows to the virtual base of the
+// indirect_call argument
+.decl IndirectCallResolvent(ctx: symbol, indirect_call: CInsn, obj: symbol)

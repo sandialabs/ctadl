@@ -1,0 +1,8 @@
+def F(p, q) {
+  p.f = q.g;
+}
+
+def Main() {
+  x.h = source(Network);
+  r = F(y, x.h);
+}

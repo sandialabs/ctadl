@@ -1,0 +1,5 @@
+def A(p) {
+    p = source(Input);
+    x.f.g = p;
+    sink(x.*, Dangerous);
+}

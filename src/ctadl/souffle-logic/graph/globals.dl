@@ -1,0 +1,112 @@
+// the point of global handling is generating summaries that go across function
+// boundaries.
+
+// m2 argument affects m1 argument through globals
+// f is a formal; g is a global; -> are write edges
+// f2 -- ... -> g3
+// g3 -> g4
+// g4 -- ... -> f1.x
+SummaryFlow(m1, n1, p1, m2, n2, p2, "") :-
+    FormalReachesGlobal(g3, p3, f2, p2),
+    (GlobalReachable(g4, p4, g3, p3); g3=g4, p3=p4),
+    GlobalReachesFormal(f1, p1, g4, p4),
+    CFunction_FormalParam(m1, n1, f1),
+    CFunction_FormalParam(m2, n2, f2),
+    (n1 != n2; p1 != p2; m1 != m2),
+    (p1 != ""; CFunction_isFormalParamByRef(m1, n1)).
+
+// ---------------------------------------------------------------------------
+// support
+
+// local v .something is a read of a global .something-else
+.decl GlobalVariableLoad(v1: CVar, p1: CAccessPath, g2: CVar, p2: CAccessPath)
+.decl GlobalVariableStore(g1: CVar, p1: CAccessPath, v2: CVar, p2: CAccessPath)
+
+GlobalVariableLoad(v1, p1, g2, p2) :- VirtualAssign(_, v1, p1, g2, p2, _, _), CVar_isGlobal(g2), !CVar_isGlobal(v1).
+GlobalVariableStore(g1, p1, v2, p2) :- VirtualAssign(_, g1, p1, v2, p2, _, _), CVar_isGlobal(g1), !CVar_isGlobal(v2).
+LocallyReachable_Root(v, p) :- Vertex(v, p), GlobalVariableLoad(v, p, _, _).
+.plan 1: (2, 1)
+
+// intraprocedural reachability
+.decl FormalReachesGlobal(g1: CVar, p1: CAccessPath, f2: CVar, p2: CAccessPath)
+.decl GlobalReachesFormal(f1: CVar, p1: CAccessPath, g2: CVar, p2: CAccessPath)
+.decl GlobalReachesGlobal(g1: CVar, p1: CAccessPath, g2: CVar, p2: CAccessPath)
+
+// g1.p1 <- f2.p2
+FormalReachesGlobal(g1, p1, f2, p2) :-
+    GlobalVariableStore(g1, p1, f2, p2),
+    CFunction_FormalParam(_, _, f2).
+
+// f2.p2 -> v1.p1  which is stored to g3.p3
+FormalReachesGlobal(g3, p3, f2, p2) :-
+    LocallyReachable(v1, p1, f2, p2, _),
+    GlobalVariableStore(g3, p3, v1, p1),
+    CFunction_FormalParam(_, _, f2).
+.plan 1: (2, 1, 3)
+
+// f1.p1 <- g2.p2
+GlobalReachesFormal(f1, p1, g2, p2) :-
+    GlobalVariableLoad(f1, p1, g2, p2),
+    CFunction_FormalParam(_, _, f1).
+
+// v2.p2 -> f1.p1 and v2.p2 is a load of a global
+GlobalReachesFormal(f1, p1, g3, p3) :-
+    LocallyReachable(f1, p1, v2, p2, _),
+    GlobalVariableLoad(v2, p2, g3, p3),
+    CFunction_FormalParam(_, _, f1).
+.plan 1: (2, 1, 3)
+
+GlobalReachesGlobal(g1, p1, g2, p2) :-
+    VirtualAssign(_, g1, p1, g2, p2, _, _), CVar_isGlobal(g1), CVar_isGlobal(g2).
+
+// g4.p4 -> v3.p3 -...-> v2.p2 -> v1.p1
+GlobalReachesGlobal(g1, p1, g4, p4) :-
+    LocallyReachable(v2, p2, v3, p3, _),
+    GlobalVariableLoad(v3, p3, g4, p4),
+    GlobalVariableStore(g1, p1, v2, p2),
+    (g1 != g4; p1 != p4).
+.plan 1: (2, 1, 3), 2: (3, 1, 2)
+
+GlobalReachesGlobal(g1, p1, g4, p4) :-
+    GlobalVariableLoad(v2, p2, g4, p4),
+    GlobalVariableStore(g1, p1, v2, p2),
+    (g1 != g4; p1 != p4).
+.plan 1: (2, 1)
+
+
+// g1 and g2 are global vars. g1.p1 <- g2.p2
+.decl GlobalReachable(g1: CVar, p1: CAccessPath, g2: CVar, p2: CAccessPath)
+
+GlobalReachable(g1, p1, g2, p2) :- GlobalReachesGlobal(g1, p1, g2, p2).
+GlobalReachable(g1, p1, g3, p3) :-
+    GlobalReachable(g2, p2, g3, p3),
+    GlobalReachesGlobal(g1, p1, g2, p2).
+.plan 1: (2, 1)
+
+.decl GlobalReachableSources(v: CVar, p: CAccessPath)
+GlobalReachableSources(v, p) :-
+    GlobalReachable(_, _, v, p).
+
+// propagates virtualallocs through global reachability
+VirtualAlloc(v0, p0, obj, "") :-
+    GlobalVariableStore(g2, p2, v_alloc, p_alloc),
+    (g1 = g2, p1 = p2; GlobalReachable(g1, p1, g2, p2)),
+    GlobalVariableLoad(v0, p0, g1, p1),
+    VirtualAlloc(v_alloc, p_alloc, obj, _).
+
+CTADLStats("GlobalReachable", n) :- n = count : { GlobalReachable(_, _, _, _) }.
+CTADLStats("GlobalReachableSources", n) :- n = count : { GlobalReachableSources(_, _) }.
+CTADLStats("GlobalVariableLoad", n) :- n = count : { GlobalVariableLoad(_, _, _, _) }.
+CTADLStats("GlobalVariableStore", n) :- n = count : { GlobalVariableStore(_, _, _, _) }.
+CTADLStats("FormalReachesGlobal", n) :- n = count : { FormalReachesGlobal(_, _, _, _) }.
+CTADLStats("GlobalReachesFormal", n) :- n = count : { GlobalReachesFormal(_, _, _, _) }.
+CTADLStats("GlobalReachesGlobal", n) :- n = count : { GlobalReachesGlobal(_, _, _, _) }.
+
+#ifdef ALL_OUTPUTS
+.output GlobalVariableLoad(CTADL_OUTPUT_DB_IO)
+.output GlobalVariableStore(CTADL_OUTPUT_DB_IO)
+.output FormalReachesGlobal(CTADL_OUTPUT_DB_IO)
+.output GlobalReachesFormal(CTADL_OUTPUT_DB_IO)
+.output GlobalReachesGlobal(CTADL_OUTPUT_DB_IO)
+.output GlobalReachable(CTADL_OUTPUT_DB_IO)
+#endif

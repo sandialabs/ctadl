@@ -1,0 +1,15 @@
+TaintSourceVertex(label, v, p) :-
+    CisFunction(func),
+    contains("recv", func),
+    CFunction_FormalParam(func, n, v),
+    n = 1,
+    p = "",
+    label = "SOURCE".
+
+LeakingSinkVertex(label, v, p) :-
+    CisFunction(func),
+    contains("send", func),
+    CFunction_FormalParam(func, n, v),
+    n = 1,
+    p = "",
+    label = "SINK".

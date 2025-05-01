@@ -1,0 +1,886 @@
+{
+  "model_generators": [
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "name": "openFileInput",
+          "parent": "Landroid/content/Context;"
+        }
+      ],
+      "model": {
+        "sources": [
+          {
+            "kind": "File Data",
+            "port": "Return"
+          }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "name": "sendBroadcast",
+          "parent": "Landroid/content/ContextWrapper;"
+        }
+      ],
+      "model": {
+        "sinks": [
+          {
+            "kind": "IPC",
+            "port": "Argument(*)"
+          }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "name": "send",
+          "parent": "Landroid/os/Messenger;"
+        }
+      ],
+      "model": {
+        "sinks": [
+          {
+            "kind": "IPC",
+            "port": "Argument(*)"
+          }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "<init>",
+            "listFiles"
+          ],
+          "parent": "Ljava/io/File;"
+        }
+      ],
+      "model": {
+        "sources": [
+          {
+            "kind": "IO",
+            "port": "Return"
+          }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "name": "delete",
+          "parent": "Ljava/io/File;"
+        }
+      ],
+      "model": {
+        "sinks": [
+          {
+            "kind": "FileDelete",
+            "port": "Argument(*)"
+          }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "putObject",
+            "write"
+          ],
+          "parent": "Ljava/io/FileWriter;"
+        }
+      ],
+      "model": {
+        "sinks": [
+          {
+            "kind": "IO",
+            "port": "Argument(*)"
+          }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "update",
+            "insert"
+          ],
+          "parent": "Landroid/database/sqlite/SQLiteDatabase;"
+        }
+      ],
+      "model": {
+        "sinks": [
+          {
+            "kind": "SQL",
+            "port": "Argument(*)"
+          }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "update"
+          ],
+          "parent": "Landroid/database/sqlite/SQLiteDatabase;"
+        }
+      ],
+      "model": {
+        "sinks": [
+          {
+            "kind": "SQL",
+            "port": "Argument(4).*"
+          }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "getLatitude",
+            "getLongitude",
+            "getLastKnownLocation"
+          ],
+          "parents": [
+            "Landroid/location/Location;",
+            "Landroid/location/LocationManager;"
+          ]
+        }
+      ],
+      "model": {
+        "sources": [
+          { "kind": "Location", "port": "Return" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "getImei",
+            "getDeviceId",
+            "getSubscriberId",
+            "getSimSerialNumber",
+            "getSimState",
+            "getSimCountryIso",
+            "getSimCount",
+            "getLine1Number",
+            "getNetworkOperatorName"
+          ],
+          "parent": "Landroid/telephony/TelephonyManager;"
+        }
+      ],
+      "model": {
+        "sources": [
+          {
+            "kind": "Telephony",
+            "port": "Return"
+          }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "getInputStream",
+            "openConnection"
+          ],
+          "parents": [
+            "Ljava/net/URLConnection;",
+            "Ljava/net/URL;"
+          ]
+        }
+      ],
+      "model": {
+        "sources": [
+          {
+            "kind": "Net",
+            "port": "Return"
+          }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "name": "getEntity",
+          "parent": "Lorg/apache/http/HttpResponse;"
+        }
+      ],
+      "model": {
+        "sources": [
+          {
+            "kind": "Net",
+            "port": "Return"
+          }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "toString",
+            "toByteArray",
+            "getContentCharSet"
+          ],
+          "parent": "Lorg/apache/http/util/EntityUtils;"
+        }
+      ],
+      "model": {
+        "sources": [
+          {
+            "kind": "Net",
+            "port": "Return"
+          }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "name": "<init>",
+          "parents": [
+            "Ljava/net/URL;",
+            "Lorg/apache/http/message/BasicNameValuePair;"
+          ]
+        }
+      ],
+      "model": {
+        "sinks": [
+          { "kind": "Net", "port": "Argument(*)" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "name": "read",
+          "parent": "Landroid/media/AudioRecord;"
+        }
+      ],
+      "model": {
+        "sources": [
+          {
+            "kind": "Net",
+            "port": "Argument(*)"
+          }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "name": "read",
+          "parent": "Ljava/io/BufferedReader;"
+        }
+      ],
+      "model": {
+        "sources": [
+          {
+            "kind": "Data",
+            "port": "Argument(1)"
+          }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "getInstalledApplications",
+            "getInstalledPackages",
+            "queryIntentActivities",
+            "queryIntentServices",
+            "queryBroadcastReceivers",
+            "queryContentProviders"
+          ],
+          "parent": "Landroid/content/pm/PackageManager;"
+        }
+      ],
+      "model": {
+        "sources": [
+          {
+            "kind": "Personal",
+            "port": "Return"
+          }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "name": "obtainMessage",
+          "parent": "Landroid/os/Handler;"
+        }
+      ],
+      "model": {
+        "sources": [
+          {
+            "kind": "IPC",
+            "port": "Return"
+          }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "write",
+            "writeBytes",
+            "append"
+          ],
+          "parents": [
+            "Ljava/io/OutputStream;",
+            "Ljava/io/FileOutputStream;",
+            "Ljava/io/Writer;",
+            "Ljava/io/OutputStreamWriter;",
+            "Ljava/io/DataOutputStream;"
+          ]
+        }
+      ],
+      "model": {
+        "sinks": [
+          { "kind": "IO", "port": "Argument(*)" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [ "write" ],
+          "parents": [
+            "Ljava/io/DataOutputStream;",
+            "Ljava/io/OutputStream;"
+          ]
+        },
+        {
+          "constraint": "signature",
+          "pattern": "^\\(\\[.*"
+        }
+      ],
+      "model": {
+        "sinks": [
+          { "kind": "IO", "port": "Argument(1).*" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "write"
+          ],
+          "parents": [
+            "Ljava/io/FileOutputStream;"
+          ]
+        }
+      ],
+      "model": {
+        "sinks": [
+          {
+            "kind": "IO",
+            "port": "Argument(1).*"
+          }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "set",
+            "setRequestProperty",
+            "getOutputStream"
+          ],
+          "parents": [
+            "Ljava/net/URL;",
+            "Ljava/net/URLConnection;"
+          ]
+        }
+      ],
+      "model": {
+        "sinks": [
+          {
+            "kind": "Net",
+            "port": "Argument(*)"
+          }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "setVideoSource",
+            "setPreviewDisplay",
+            "start",
+            "registerReceiver"
+          ],
+          "parents": [
+            "Landroid/media/MediaRecorder;",
+            "Landroid/content/Context;"
+          ]
+        }
+      ],
+      "model": {
+        "sinks": [
+          {
+            "kind": "Audio",
+            "port": "Argument(*)"
+          }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "sendTextMessage",
+            "sendDataMessage",
+            "sendMultipartTextMessage"
+          ],
+          "parents": [
+            "Landroid/telephony/SmsManager;"
+          ]
+        }
+      ],
+      "model": {
+        "sinks": [
+          {
+            "kind": "Telephony",
+            "port": "Argument(*)"
+          }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "connect"
+          ],
+          "parents": [
+            "Ljava/net/Socket;"
+          ]
+        }
+      ],
+      "model": {
+        "sinks": [
+          {
+            "kind": "Net",
+            "port": "Argument(*)"
+          }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "sendMessage"
+          ],
+          "parents": [
+            "Landroid/os/Handler;"
+          ]
+        }
+      ],
+      "model": {
+        "sinks": [
+          {
+            "kind": "Net",
+            "port": "Argument(*)"
+          }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "putBoolean",
+            "putFloat",
+            "putInt",
+            "putLong",
+            "putString"
+          ],
+          "parents": [
+            "Landroid/content/SharedPreferences$Editor;"
+          ]
+        }
+      ],
+      "model": {
+        "sinks": [
+          {
+            "kind": "Persistence",
+            "port": "Argument(*)"
+          }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "getDefaultSharedPreferences"
+          ],
+          "parents": [
+            "Landroid/content/SharedPreferences$Editor;"
+          ]
+        }
+      ],
+      "model": {
+        "sources": [
+          {
+            "kind": "Persistence",
+            "port": "Return"
+          }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "getAddress"
+          ],
+          "parents": [
+            "Landroid/bluetooth/BluetoothAdapter;"
+          ]
+        }
+      ],
+      "model": {
+        "sources": [
+          {
+            "kind": "Telephony",
+            "port": "Return"
+          }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "getMacAddress",
+            "getSSID",
+            "getCid",
+            "getLac"
+          ],
+          "parents": [
+            "Landroid/net/wifi/WifiInfo;",
+            "Landroid/telephony/gsm/GsmCellLocation;"
+          ]
+        }
+      ],
+      "model": {
+        "sources": [
+          {
+            "kind": "Telephony",
+            "port": "Return"
+          }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "getCountry",
+            "getTimeZone"
+          ],
+          "parents": [
+            "Ljava/util/Locale;",
+            "Ljava/util/Calendar;"
+          ]
+        }
+      ],
+      "model": {
+        "sources": [
+          {
+            "kind": "Location",
+            "port": "Return"
+          }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "getAccounts",
+            "getAllBookmarks",
+            "getAllVisitedUrls"
+          ],
+          "parents": [
+            "Landroid/accounts/AccountManager;",
+            "Landroid/provider/Browser;"
+          ]
+        }
+      ],
+      "model": {
+        "sources": [
+          {
+            "kind": "Personal",
+            "port": "Return"
+          }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "name": "execute",
+          "parents": [
+            "Lorg/apache/http/impl/client/DefaultHttpClient;",
+            "Lorg/apache/http/client/HttpClient;"
+          ]
+        }
+      ],
+      "model": {
+        "sinks": [
+          {
+            "kind": "Net",
+            "port": "Argument(*)"
+          }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "sendBroadcast",
+            "sendBroadcastAsUser",
+            "sendOrderedBroadcast",
+            "sendOrderedBroadcastAsUser",
+            "sendStickyBroadcast",
+            "sendStickyBroadcastAsUser",
+            "sendStickyOrderedBroadcast",
+            "sendStickyOrderedBroadcastAsUser"
+          ],
+          "parent": "Landroid/app/Activity;"
+        }
+      ],
+      "model": {
+        "sinks": [
+          {
+            "kind": "Net",
+            "port": "Argument(*)"
+          }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "insert"
+          ],
+          "parent": "Landroid/content/ContentResolver;"
+        }
+      ],
+      "model": {
+        "sinks": [
+          { "kind": "Net", "port": "Argument(*)" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "update",
+            "query"
+          ],
+          "parent": "Landroid/content/ContentResolver;"
+        }
+      ],
+      "model": {
+        "sinks": [
+          { "kind": "Net", "port": "Argument(*)" },
+          { "kind": "Net", "port": "Argument(2).*" },
+          { "kind": "Net", "port": "Argument(4).*" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "delete"
+          ],
+          "parent": "Landroid/content/ContentResolver;"
+        }
+      ],
+      "model": {
+        "sinks": [
+          {
+            "kind": "Net",
+            "port": "Argument(*)"
+          },
+          {
+            "kind": "Net",
+            "port": "Argument(3).*"
+          }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "query"
+          ],
+          "parent": "Landroid/content/ContentResolver;"
+        }
+      ],
+      "model": {
+        "sinks": [
+          {
+            "kind": "Personal",
+            "port": "Argument(*)"
+          },
+          {
+            "kind": "Personal",
+            "port": "Argument(2).*"
+          },
+          {
+            "kind": "Personal",
+            "port": "Argument(4).*"
+          }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "getString",
+            "query"
+          ],
+          "parents": [
+            "Landroid/database/Cursor;",
+            "Landroid/database/sqlite/SQLiteDatabase;"
+          ]
+        }
+      ],
+      "model": {
+        "sources": [
+          {
+            "kind": "Personal",
+            "port": "Return"
+          }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "command"
+          ],
+          "parents": [
+            "Ljava/lang/ProcessBuilder;"
+          ]
+        }
+      ],
+      "model": {
+        "sinks": [
+          {
+            "kind": "Execute",
+            "port": "Argument(*)"
+          }
+        ]
+      }
+    }
+  ]
+}

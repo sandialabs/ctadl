@@ -1,0 +1,45 @@
+#include "taint-front/taint_front_lang.dl"
+#include "config.dl"
+#ifdef CTADL_IMPORT_LANG_FACTS_FROM_DB
+#include "taint-front/importdb.dl"
+#else
+#include "taint-front/import.dl"
+#endif
+
+// ---------------------------------------------------------------------------
+// phase 1
+
+CTADLConfig("CTADL_ANALYSIS_LANG", "taint-front").
+
+#ifndef CTADL_DISABLE_INDEX_PHASE
+
+#include "graph/dataflow_graph.dl"
+
+.init ctadl_taint_front_phase1 = CGraphRules
+
+#define FS_CallEdgePlan \
+    .plan 1: (4, 1, 2, 3, 5, 6), \
+          2: (6, 5, 4, 1, 2, 3)
+
+#include "graph/slice/callee.dl"
+
+.init track_assign_func = SliceCallee
+track_assign_func.input_.StartVertex(v, p, func) :-
+    VirtualAlloc(v, p, func, ""),
+    EnableContextFreeObjectTracking().
+
+CallEdge(s, fid, "") :-
+    track_assign_func.isReachable(v, p, fid),
+    IndirectCallStmt(s, v, p),
+    EnableContextFreeObjectTracking().
+
+#ifdef ALL_OUTPUTS
+.output track_assign_func.ReachableVertex(CTADL_OUTPUT_DB_IO)
+#endif
+
+#endif // CTADL_DISABLE_INDEX_PHASE
+
+#include <export.dl>
+#include <taint-front/export.dl>
+
+.pragma "suppress-warnings" "CFunction_ModelAssign,track_assign_func.input_.SanitizeAssign"

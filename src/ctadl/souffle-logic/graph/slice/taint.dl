@@ -1,0 +1,413 @@
+#include "graph/slice/declarations.dl"
+
+// this forward slice and the forward slice with suspicion need to have the
+// same signature. but this one doesn't adjust suspicion in any way. this slice
+// can be used to track how allocations/function pointers flow around the
+// program without the complication of needing to deal with adjusting suspicion
+// based on traversed edges.
+
+// ---------------------------------------------------------------------------
+// macros
+
+// by default, we assume that VirtualAssign is recursive. So the default plan
+// will prioritize it for deltas.
+#ifndef FS_VirtualAssignPlan
+#define FS_VirtualAssignPlan .plan 1: (2, 1, 3)
+#endif
+
+#ifndef SB_CallFlowEdgePlan
+#define SB_CallFlowEdgePlan .plan 1: (2, 1, 3, 4)
+#endif
+
+#ifndef FS_VertexInline
+#define FS_VertexInline
+#endif
+
+#ifndef FS_VirtualAssignInline
+#define FS_VirtualAssignInline
+#endif
+
+#ifndef FS_ActualToFormalPlan
+#define FS_ActualToFormalPlan
+#endif
+
+#ifndef FS_FormalToActualPlan
+#define FS_FormalToActualPlan
+#endif
+.comp SliceTaint {
+
+// ---------------------------------------------------------------------------
+// inputs
+
+.comp Input {
+    // computes flows from root vertex
+    .decl StartVertex(v: CVar, p: CAccessPath, t: SliceLabelType) inline
+    .decl SanitizeAssign(
+        v1: CVar, p1: CAccessPath, v2: CVar, p2: CAccessPath, t: SliceLabelType
+    )
+    .decl SanitizeVertex(
+        v: CVar, p: CAccessPath, t: SliceLabelType
+    )
+    // set at most one of these
+    .decl SliceForward()
+    .decl SliceBackward()
+}
+
+.init input_ = Input
+
+
+// these are input-output relations. Vertices and Assigns may be added during slicing.
+.decl Vertex(v: CVar, p: CAccessPath) FS_VertexInline
+.decl VirtualAssign(
+    insn: CInsn,
+    v1: CVar, p1: CAccessPath, v2: CVar, p2: CAccessPath,
+    reason: symbol,
+    ctx: symbol
+) FS_VirtualAssignInline
+
+#include <taint_schema.dl>
+
+.decl isReachable(v: CVar, p: CAccessPath, label: SliceLabelType)
+
+isReachable(v, p, label) :- ReachableVertex(_, v, p, label, _, _, _).
+
+#define ReachableVertexId(dir, v, p, label, call_state, ctx) \
+    ord(cat(dir, ":", v, ":", p, ":", label, ":", call_state, ":", ctx))
+#define Direction(dir) \
+    (input_.SliceForward(), dir = "fw"; input_.SliceBackward(), dir = "bw")
+
+.decl ReachableFunc(func: CFunction)
+.decl ReachableCall(insn: CInsn)
+
+Vertex(var, ap),
+ReachableVertex(id, var, ap, label, cstate, sus, "") :-
+    input_.StartVertex(var, ap, label),
+    MatchStart(cstate),
+    sus = 0,
+    Direction(dir),
+    id = ReachableVertexId(dir, var, ap, label, cstate, "").
+
+// reachable across intraprocedural edge
+ReachableEdge(vertex_to, vertex_from, insn, "move"),
+ReachableVertex(vertex_to, v1, p1, label, cs, sus, ctx0) :-
+    ReachableVertex(vertex_from, v2, p2, label, cs, sus, ctx1),
+    VirtualAssign(insn, v1, p1, v2, p2, _, ctx2),
+    !input_.SanitizeAssign(v1, p1, v2, p2, label),
+    !input_.SanitizeVertex(v2, p2, label),
+    call_string_taint_constraint(ctx0, ctx1, ctx2),
+    Direction(dir),
+    vertex_to = ReachableVertexId(dir, v1, p1, label, cs, ctx0).
+FS_VirtualAssignPlan
+
+// propagate vertex to caller/callee because this increases precision for tainted things.
+Vertex(v_to, p_to),
+ReachableEdge(vertex_to, vertex_from, call, direction),
+ReachableVertex(vertex_to, v_to, p_to, label, cs_to, sus, ctx0) :-
+    ReachableVertex(vertex_from, v_from, p_from, label, cs_from, sus, ctx1),
+    CallFlowEdge(call, v_to, p_to, v_from, p_from, ctx2, direction),
+    !input_.SanitizeAssign(v_to, p_to, v_from, p_from, label),
+    !input_.SanitizeVertex(v_from, p_from, label),
+    MatchNext(cs_from, direction, cs_to),
+    call_string_taint_constraint(ctx0, ctx1, ctx2),
+    Direction(dir),
+    vertex_to = ReachableVertexId(dir, v_to, p_to, label, cs_to, ctx0).
+SB_CallFlowEdgePlan
+
+// an edge between the vertices of caller and callee, created because at least
+// one vertex is tainted
+.decl CallFlowEdge(
+    insn: CInsn, dst_var: CVar, dst_path: CAccessPath, src_var: CVar, src_path: CAccessPath,
+    ctx: symbol, direction: symbol
+)
+
+// call flow edge enabled by reachable(actual_param)
+CallFlowEdge(call, v1, p_suffix, v2, p_tainted, ctx2, "actual-to-formal") :-
+    ReachableVertex(_, v2, p_tainted, _, _, _, _),
+    CCall_ActualParam(call, n, v2, p_actual),
+    CallEdge(call, id, ctx2),
+    (   input_.SliceForward()
+    ;   input_.SliceBackward(), CFunction_isFormalParamByRef(id, n)),
+    MatchComputedPrefix(p_tainted, p_actual, p_suffix),
+    CFunction_FormalParam(id, n, v1).
+FS_ActualToFormalPlan
+
+// call flow edge enable by reachable(formal_param)
+CallFlowEdge(call, v1, p1, v2, p_tainted, ctx2, "formal-to-actual") :-
+    ReachableVertex(_, v2, p_tainted, _, _, _, _),
+    CFunction_FormalParam(id, n, v2),
+    (   input_.SliceBackward()
+    ;   input_.SliceForward(), CFunction_isFormalParamByRef(id, n)),
+    CallEdge(call, id, ctx2),
+    CCall_ActualParam(call, n, v1, p_actual),
+    MatchComputedPrefix(p1, p_actual, p_tainted).
+FS_FormalToActualPlan
+
+// ---------------------------------------------------------------------------
+// Alias handling
+
+// if alias is tainted, taint original
+//ReachableVertex(id, x, xp, ylabel, ycs, ysus, rcx) :-
+//    ReachableVertex(_, y, yp, ylabel, ycs, ysus, ycx),
+//    AliasedBy(x, xp, y, yp, acx),
+//    Direction(dir),
+//    call_string_taint_constraint(rcx, ycx, acx),
+//    id = ReachableVertexId(dir, x, xp, ylabel, ycs, rcx).
+
+// XXX add a context in taint analysis to make sure that calls don't infect unrelated calls
+// Make it possible to run VirtualAssign rules (just field prop, not summaries) during taint analysis. Test this. Is it fast?
+// if vertex tainted inside alias, taint alias
+//ReachableVertex(id, tmp, dotthis0filename, ylabel, ycs, ysus, yctx) :-
+//    ReachableVertex(_, this, dotrunnablethis0filename, ylabel, ycs, ysus, yctx),
+//    AliasedBy(this, dotrunnable, tmp, ""),
+//    MatchComputedPrefix(dotrunnablethis0filename, dotrunnable, dotthis0filename),
+//    Direction(dir),
+//    id = ReachableVertexId(dir, tmp, dotthis0filename, ylabel, ycs, yctx).
+
+// Propagates taint from aliases to originals.
+// We propagate from tainted aliased to originals, the reverse direction of
+// data flow, because the principal function of alias analysis is to capture
+// such indirect flows.
+ReachableVertex(id, y, yHF, label, cs, sus, cx_prime) :-
+    ReachableVertex(_, x, xGF, label, cs, sus, rcx),
+    (AliasedBy(y, yH, x, xG, acx); AliasedBy(x, xG, y, yH, acx)),
+    call_string_taint_constraint(cx_prime, rcx, acx),
+    MatchComputedPrefix(xGF, xG, F),
+    MatchComputedPrefix(yHF, yH, F),
+    Direction(dir),
+    id = ReachableVertexId(dir, y, yHF, label, cs, cx_prime).
+
+//AliasedBy(y_formal, J, x_formal, K, cx_prime) :-
+//    AliasedBy(y, yHK, x, xGJ, cx),
+//    (   CCall_ActualParam(call, x_num, x, xG), CCall_ActualParam(call, y_num, y, yH)
+//    ;   ActualBackReach(call, x_num, _, _, x, xG), ActualBackReach(call, y_num, _, _, y, yH)),
+//    MatchComputedPrefix(yHK, yH, K),
+//    MatchComputedPrefix(xGJ, xG, J),
+//    CallEdge(call, func, _ctx),
+//    CFunction_FormalParam(func, y_num, y_formal),
+//    CFunction_FormalParam(func, x_num, x_formal),
+//    !contains(func, cx),
+//    cx_prime = @PushFrame(func, cx).
+
+// any func that has a reachable var
+ReachableFunc(f) :-
+    ReachableVertex(_, xv, _xp, _, _, _, _),
+    CVar_InFunction(xv, f).
+
+// every call in a reachable func
+ReachableCall(call) :-
+    ReachableFunc(f),
+    IntCInsn_InFunction(call, _, f),
+    CCall_ActualParam(call, _, _, _).
+
+// Reach backward from call site actuals
+// Restricted to functions with taint
+.decl ActualBackReach(
+    call: symbol,
+    n: number,
+    actualv: symbol,
+    actualp: CAccessPath,
+    reachv: symbol,
+    reachp: CAccessPath
+)
+
+ActualBackReach(call, n, actualv, actualp, reachv, reachp) :-
+    ReachableCall(call),
+    CCall_ActualParam(call, n, actualv, actualp),
+    VirtualAssign(_, actualv, actualp, reachv, reachp, _, _),
+    !CVar_isGlobal(reachv).
+
+ActualBackReach(call, n, actualv, actualp, reachv, reachp) :-
+    ActualBackReach(call, n, actualv, actualp, midv, midp),
+    VirtualAssign(_, midv, midp, reachv, reachp, _, _),
+    !CVar_isGlobal(reachv).
+
+// Assume you've determined there's a data flow (dstv,dstp) <- (srcv,srcp).
+// This macro ports field accesses of the source vertex into accesses of the
+// destination. The corresponding AP is in 'ported_dstp'.
+#define PortVertexAccess_2(dstv, dstp, srcv, srcp, ported_dstp) \
+    (MatchComputedPrefix(_, srcp, ported_dstp), Vertex(dstv, ported_dstp))
+// Same as above without a constraint on Vertex
+#define PortVertexAccess_1(dstv, dstp, srcv, srcp, ported_dstp) \
+    MatchComputedPrefix(_, srcp, ported_dstp)
+
+// THIS DOES A THING
+// XXX generalize
+//AliasedBy(formalv, dotrunnablethis0, formalv, "") :-
+//    ActualBackReach(call, n, tmp_engn, "", receiver, dotengine),
+//    MatchComputedPrefix(full, dotengine, dotrunnablethis0),
+//    // aliasing condition
+//    VirtualAssign(_, receiver, full, receiver, dotengine, _, _),
+//    CallEdge(call, f, _),
+//    CFunction_FormalParam(f, n, formalv).
+
+.output VirtualAssign(CTADL_OUTPUT_DB_IO)
+
+.decl Match(call:symbol, na: number, nb: number, ctx2: symbol)
+.output Match(CTADL_OUTPUT_DB_IO)
+
+
+
+.decl BackReachSuffix(path: symbol, prefix: symbol, suffix: symbol)
+.output BackReachSuffix(CTADL_OUTPUT_DB_IO)
+
+BackReachSuffix(FG, F, G) :-
+    ActualBackReach(_, _, _, "", x, F),
+    Vertex(x, FG),
+    MatchComputedPrefix(FG, F, G).
+.plan 1: (2, 1, 3)
+
+// Propagates alias assignments across function boundaries when in tainted
+// functions.
+IntCInsn_InFunction(insn, 0, f),
+VirtualAssign(insn, q, J, p, G, "alias", ctx2) :-
+    ActualBackReach(call, n_a, a, "", x, F),
+    BackReachSuffix(FG, F, G),
+    VirtualAssign(originsn, y, HJ, x, FG, _, ctx1),
+    ActualBackReach(call, n_b, _b, "", y, H),
+    BackReachSuffix(HJ, H, J),
+    CallEdge(call, f, _),
+    CVar_InFunction(a, infunc),
+    !contains(infunc, ctx1),
+    ctx2 = @PushFrame(infunc, ctx1),
+    CFunction_FormalParam(f, n_a, p),
+    CFunction_FormalParam(f, n_b, q),
+    insn = cat(originsn, "/", to_string(ord(f)), "/alias"),
+    (q != p; J != G).
+.plan 1: (2, 1, 3, 4, 5, 6, 7, 8, 9),
+      2: (3, 1, 2, 4, 5, 6, 7, 8, 9),
+      3: (4, 5, 3, 1, 2, 6, 7, 8, 9),
+      4: (5, 4, 3, 1, 2, 6, 7, 8, 9)
+
+// aliasing is subset based. we start from a target and add to it all the
+// included things, recursively. a target will be one for which results are
+// calculated in AliasedBy. this is populated elsewhere in the analysis.
+// a=(xv,xp) aliased by b=(zv,zp) implies data flow from a to b
+// Also writes to a.F go into b.F
+
+#define AliasEdge2(dstvar, dstap, srcvar, srcap) \
+    (VirtualAssign(_, dstvar, dstap, srcvar, srcap, _, _), !CVar_isGlobal(dstvar), !CVar_isGlobal(srcvar))
+
+AliasedBy_Target(xv) :- ReachableVertex(_, xv, _xp, _, _, _, "").
+AliasedBy_Target(xv) :- ActualBackReach(_, _, _, _, xv, _).
+//AliasedBy(x, xp, y, yp) :- AliasedBy_Target(x), Vertex(x, xp), y=x, yp=xp.
+AliasedBy(x, xG, y, yF, "") :- AliasedBy_Target(x), AliasEdge2(y, yF, x, xG).
+AliasedBy(x, xF, z, zH, cx) :- AliasedBy(x, xF, y, yG, cx), AliasEdge2(z, zH, y, yG).
+
+#define SLICE_FIELD_PROP
+#ifdef SLICE_FIELD_PROP
+Vertex(v, p) :- VirtualAssign(_, v, p, _, _, _, _); VirtualAssign(_, _, _, v, p, _, _).
+VirtualAssign(s, v1, p13, v2, p23, "fp", ctx) :- //B
+    Vertex(v2, p23),
+    VirtualAssign(s, v1, p1, v2, p2, _ty, ctx),
+    p1 = "",
+    p2 = "",
+    p13 = p23,
+    !CVar_isGlobal(v1),
+    !CVar_isGlobal(v2),
+    (v1 != v2; p13 != p23).
+VirtualAssign(s, v1, p13, v2, p23, "fp", ctx) :- //D
+    Vertex(v2, p23),
+    VirtualAssign(s, v1, p1, v2, p2, _ty, ctx),
+    p1 = "",
+    p2 != "",
+    ComputedAccessPathNonEmptySplit(p23, p2, p3),
+    p13 = p3,
+    isComputedAccessPath(p13),
+    !CVar_isGlobal(v1),
+    !CVar_isGlobal(v2),
+    (v1 != v2; p13 != p23).
+VirtualAssign(s, v1, p13, v2, p23, "fp", ctx) :- //F
+    Vertex(v2, p23),
+    VirtualAssign(s, v1, p1, v2, p2, _ty, ctx),
+    p1 != "",
+    p2 = "",
+    p23 = p3,
+    ComputedAccessPathNonEmptySplit(p13, p1, p3),
+    !CVar_isGlobal(v1),
+    !CVar_isGlobal(v2),
+    (v1 != v2; p13 != p23).
+VirtualAssign(s, v1, p13, v2, p23, "fp", ctx) :- //H
+    Vertex(v2, p23),
+    ComputedAccessPathNonEmptySplit(p23, p2, p3),
+    VirtualAssign(s, v1, p1, v2, p2, _ty, ctx),
+    ComputedAccessPathNonEmptySplit(p13, p1, p3),
+    !CVar_isGlobal(v1),
+    !CVar_isGlobal(v2),
+    (v1 != v2; p13 != p23).
+
+
+
+// Backward
+
+VirtualAssign(s, v2, p23, v1, p13, "fp", ctx) :- //B
+    Vertex(v2, p23),
+    VirtualAssign(s, v2, p2, v1, p1, _ty, ctx),
+    p1 = "",
+    p2 = "",
+    p13 = p23,
+    !CVar_isGlobal(v1),
+    !CVar_isGlobal(v2),
+    (v1 != v2; p13 != p23).
+VirtualAssign(s, v2, p23, v1, p13, "fp", ctx) :- //D
+    Vertex(v2, p23),
+    VirtualAssign(s, v2, p2, v1, p1, _ty, ctx),
+    p1 = "",
+    ComputedAccessPathNonEmptySplit(p23, p2, p3),
+    p13 = p3,
+    isComputedAccessPath(p13),
+    !CVar_isGlobal(v1),
+    !CVar_isGlobal(v2),
+    (v1 != v2; p13 != p23).
+VirtualAssign(s, v2, p23, v1, p13, "fp", ctx) :- //F
+    Vertex(v2, p23),
+    VirtualAssign(s, v2, p2, v1, p1, _ty, ctx),
+    p2 = "",
+    p23 = p3,
+    ComputedAccessPathNonEmptySplit(p13, p1, p3),
+    !CVar_isGlobal(v1),
+    !CVar_isGlobal(v2),
+    (v1 != v2; p13 != p23).
+VirtualAssign(s, v2, p23, v1, p13, "fp", ctx) :- //H
+    Vertex(v2, p23),
+    ComputedAccessPathNonEmptySplit(p23, p2, p3),
+    VirtualAssign(s, v2, p2, v1, p1, _ty, ctx),
+    ComputedAccessPathNonEmptySplit(p13, p1, p3),
+    !CVar_isGlobal(v1),
+    !CVar_isGlobal(v2),
+    (v1 != v2; p13 != p23).
+#endif
+
+
+.decl MatchStart(start: symbol)
+
+// matchnext just needs to know the direction of the flow -- from formal to
+// actual or actual to formal -- to figure out how to match parens.
+// prev - the state of the existing tainted object
+// next - the state of the newly tainted object
+
+// in forward slice:
+// - formal-to-actual does a "return", which leaves us unrestricted
+// - actual-to-formal does a "call", which means we can only do calls in future
+
+// in backward slice
+// - formal-to-actual does a "call", which leaves us unrestricted
+// - actual-to-formal does a "return", which means we can only do returns in future
+.decl MatchNext(prev: symbol, direction: symbol, next: symbol)
+
+MatchStart("free").
+MatchNext(prev, direction, next) :-
+    prev = "free", direction = "formal-to-actual", next = "free";
+    prev = "free", direction = "actual-to-formal", next = "restricted";
+    prev = "restricted", direction = "actual-to-formal", next = "restricted".
+
+#ifdef ALL_OUTPUTS
+//.output SlicedActual(CTADL_OUTPUT_DB_IO)
+//.output SlicedFormal(CTADL_OUTPUT_DB_IO)
+.output CallFlowEdge(CTADL_OUTPUT_DB_IO)
+.output ReachableFunc(CTADL_OUTPUT_DB_IO)
+.output ReachableCall(CTADL_OUTPUT_DB_IO)
+.output ActualBackReach(CTADL_OUTPUT_DB_IO)
+.output AliasedBy(CTADL_OUTPUT_DB_IO)
+#endif
+
+}

@@ -1,0 +1,40 @@
+def id(x) {
+  return x;
+}
+
+def Leaf(f, g, x) {
+  tmp1 = f(x);
+  tmp2 = g(tmp1);
+  return tmp2;
+}
+
+def bar1(f, x) {
+  g = id;
+  tmp = Leaf(f.func, g, x);
+  return tmp;
+}
+
+def bar(x) {
+  f.y.func = id;
+  tmp = bar1(f.y, x);
+  return tmp;
+}
+
+def allocsite() {}
+def alloc(x) {
+  tmp = allocsite;
+  return tmp;
+}
+def baz(x) {
+  f.func = alloc;
+  tmp = bar1(f, x);
+  return tmp;
+}
+
+def Main() {
+  first = source(Thing);
+  // second = first is the desired discovery
+  second = bar(first);
+  third = baz(first);
+  sink(second, Thing);
+}

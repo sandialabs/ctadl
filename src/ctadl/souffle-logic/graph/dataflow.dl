@@ -1,0 +1,481 @@
+// ------------------------------------------------------------------------
+// initial graph contains locations and instructions from the program
+
+CisAccessPath(ap) :- CisField(ap).
+
+IntCInsn_InFunction(insn, idx, func) :- CInsn_InFunction(insn, idx, func).
+
+.decl InitialVertex(v: CVar, p: CAccessPath)
+
+InitialVertex(v, p),
+Vertex(v, p) :-
+    (   CInsn_Use(v, p)
+    ;   CInsn_Move(_, v, p, _, _)
+    ;   CInsn_Move(_, _, _, v, p)
+    ;   CFunction_FormalParam(_, _, v), p=""
+    ;   CCall_ActualParam(_, _, v, p)),
+    CisAccessPath(p).
+
+VirtualAssign(stmt, v1, p1, v2, p2, "move", "") :-
+    CInsn_Move(stmt, v1, p1, v2, p2),
+    (v1 != v2; p1 != p2),
+    CisAccessPath(p1),
+    CisAccessPath(p2).
+
+// this rule is used because putting a Vertex head in the FWD and BWD rules
+// below creates stupid code
+Vertex(v, p) :-
+    VirtualAssign(_, v, p, _, _, _, _);
+    VirtualAssign(_, _, _, v, p, _, _).
+
+CallEdge(insn, callee, "") :- CInsn_UnsuspiciousCall(insn, callee).
+CallEdge(insn, callee, "") :- CInsn_Call(insn, callee).
+
+// ---------------------------------------------------------------------------
+// local reachability
+
+// This is the core local dataflow relation. It computes reachability from root
+// vertices, not general transitive closure.
+
+// formal v2.p2 reaches local variable v1.p1
+.decl LocallyReachable(v1: CVar, p1: CAccessPath, v2: CVar, p2: CAccessPath, ctx: symbol)
+
+.decl LocallyReachableSources(v: CVar, p: CAccessPath)
+LocallyReachableSources(v, p) :-
+    LocallyReachable(_, _, v, p, _).
+
+// declare as a relation because globals adds a root
+.decl LocallyReachable_Root(v: CVar, p: CAccessPath)
+
+// Local reachability starts at formal parameters.
+LocallyReachable_Root(v, p) :-
+    Vertex(v, p), CFunction_FormalParam(_, _, v).
+
+// Local reachability follows virtual assignments.
+#define LocallyReachable_CtxEdge(v1, p1, v2, p2, ctx) \
+    VirtualAssign(_, v1, p1, v2, p2, _, ctx), \
+    !CVar_isGlobal(v1), \
+    !CVar_isGlobal(v2), \
+    CVar_InFunction(v1, m), CVar_InFunction(v2, m)
+
+LocallyReachable(v1, p1, v2, p2, ctx) :-
+    LocallyReachable_Root(v2, p2),
+    LocallyReachable_CtxEdge(v1, p1, v2, p2, ctx).
+.plan 1: (2, 1, 3, 4)
+
+// If an edge has a ctx2 that is "inside" a reachability fact ctx1, then the
+// extended reachability is in ctx1.
+// e.g.
+// bar1#bar#: tmp1 <- x
+// bar1#:     tmp2 <- tmp1
+// ------------------------
+// bar1#bar#: tmp2 <- x
+LocallyReachable(v1, p1, v3, p3, ctx0) :-
+    LocallyReachable(v2, p2, v3, p3, ctx1),
+    LocallyReachable_CtxEdge(v1, p1, v2, p2, ctx2),
+    (   ctx1 = "", ctx0=ctx2;
+        1 = @CallStringUnder(ctx2, ctx1), ctx0=ctx1).
+.plan 1: (2, 1, 3, 4)
+
+// v2.p2 <- v3.p3 in context bar(bar1
+// v1.p1 <- v2.p2 in context bar1
+// means using the more specific context v1.p1 <- v3.p3 bar(bar1
+// This relates assignments from two compatible contexts.
+//LocallyReachable(v1, p1, v3, p3, ctx1) :-
+//    LocallyReachable(v2, p2, v3, p3, ctx1),
+//    LocallyReachable_CtxEdge(v1, p1, v2, p2, ctx2),
+//    1 = @CallStringUnder(ctx2, ctx1).
+//.plan 1: (2, 1, 3, 4)
+
+// Local reachability is principally used to compute function summaries.
+SummaryFlow(m1, n1, p1, m2, n2, p2, ctx) :-
+    LocallyReachable(f1, p1, f2, p2, ctx),
+    CFunction_FormalParam(m1, n1, f1),
+    CFunction_FormalParam(m2, n2, f2),
+    (n1 != n2; p1 != p2; m1 != m2),
+    (p1 != ""; CFunction_isFormalParamByRef(m1, n1)),
+    !CFunction_OmitSummaries(m1),
+    !CFunction_OmitSummaries(m2),
+    !DisableGlobalDataFlow().
+
+CTADLError(msg) :-
+    LocallyReachable(v1, _p1, v2, _p2, _),
+    CVar_InFunction(v2, f2),
+    CVar_InFunction(v1, f1),
+    f1 != f2,
+    msg = cat("LocallyReachable reaches across two functions, '", f2,
+        "' and '", f1, "' with vars '", v2, "' and '", v1, "' respectively"),
+    !DisableInterproceduralLocalReachCheck().
+
+CTADLError(msg) :-
+    LocallyReachable(v1, _p1, v2, _p2, _),
+    ( CVar_isGlobal(v1), msg = cat("LocallyReachable: 1 is global: ", v1), v2=v2;
+      CVar_isGlobal(v2), msg = cat("LocallyReachable: 2 is global: ", v2), v1=v1 ).
+
+// -----------------------------------------------------------------------
+// summary instantiation
+
+// apply a summary
+//VirtualAssign(s, to, to_path, from, from_path, "summary", "") :-
+//    SummaryFlow(m, n1, p1, m, n2, p2, ""),
+//    CallEdge(s, m, ""),
+//    CCall_ActualParam(s, n1, to, to_actual_path),
+//    CCall_ActualParam(s, n2, from, from_actual_path),
+//    MatchComputedPrefix(to_path, to_actual_path, p1),
+//    MatchComputedPrefix(from_path, from_actual_path, p2),
+//    (to != from; to_path != from_path).
+
+// af at sf st
+// -  -  -  -  A
+// -  -  -  *  B
+// -  -  *  -  C
+// -  -  *  *  D
+// -  *  -  -  E
+// -  *  -  *  F
+// -  *  *  -  G
+// -  *  *  *  H
+// *  -  -  -  I
+// *  -  -  *  J
+// *  -  *  -  K
+// *  -  *  *  L
+// *  *  -  -  M
+// *  *  -  *  N
+// *  *  *  -  O
+// *  *  *  *  P
+
+// We can group these into a couple of cases:
+// - FROM has at least one empty path and TO has at least one empty path
+// - FROM has at least one empty path but TO are nonempty
+// - TO has at least one empty path but FROM are nonempty
+// - both are nonempty
+// A B C D E F G H I J M N
+// using it
+// K L O P
+VirtualAssign(s, to, to_path, from, from_path, "summary", "") :-
+    SummaryFlow(m, n1, st, m, n2, sf, ""),
+    CallEdge(s, m, ""),
+    CCall_ActualParam(s, n1, to, at),
+    CCall_ActualParam(s, n2, from, af),
+    // At least one is empty
+    (af = ""; sf = ""),
+    oecat(from_path, af, sf),
+    (at = ""; st = ""),
+    oecat(to_path, at, st),
+    // to_path = cat(at, st), isComputedAccessPath(to_path),
+    // from_path = cat(af, sf), isComputedAccessPath(from_path),
+    (to != from; to_path != from_path).
+.plan 1: (2, 1, 3, 4)
+
+VirtualAssign(s, to, to_path, from, from_path, "summary", "") :-
+    SummaryFlow(m, n1, st, m, n2, sf, ""),
+    CallEdge(s, m, ""),
+    CCall_ActualParam(s, n2, from, af),
+    ComputedAccessPathNonEmptySplit(from_path, af, sf),
+    CCall_ActualParam(s, n1, to, at),
+    (at = ""; st = ""),
+    oecat(to_path, at, st),
+    // to_path = cat(at, st), isComputedAccessPath(to_path),
+    // from_path = cat(af, sf), isComputedAccessPath(from_path),
+    (to != from; to_path != from_path).
+.plan 1: (2, 1, 3, 4, 5), 2: (4, 1, 3, 2, 5)
+
+VirtualAssign(s, to, to_path, from, from_path, "summary", "") :-
+    SummaryFlow(m, n1, st, m, n2, sf, ""),
+    CallEdge(s, m, ""),
+    CCall_ActualParam(s, n1, to, at),
+    ComputedAccessPathNonEmptySplit(to_path, at, st),
+    CCall_ActualParam(s, n2, from, af),
+    (af = ""; sf = ""),
+    oecat(from_path, af, sf),
+    // to_path = cat(at, st), isComputedAccessPath(to_path),
+    // from_path = cat(af, sf), isComputedAccessPath(from_path),
+    from_path = af,
+    (to != from; to_path != from_path).
+.plan 1: (2, 1, 3, 4, 5), 2: (4, 1, 3, 2, 5)
+
+VirtualAssign(s, to, to_path, from, from_path, "summary", "") :- //P
+    SummaryFlow(m, n1, st, m, n2, sf, ""),
+    CallEdge(s, m, ""),
+    CCall_ActualParam(s, n1, to, at),
+    CCall_ActualParam(s, n2, from, af),
+    // to_path = cat(at, st), isComputedAccessPath(to_path),
+    // from_path = cat(af, sf), isComputedAccessPath(from_path),
+    ComputedAccessPathNonEmptySplit(to_path, at, st),
+    ComputedAccessPathNonEmptySplit(from_path, af, sf),
+    (to != from; to_path != from_path).
+.plan 1: (2, 1, 3, 4, 5, 6), 2: (5, 1, 2, 3, 4, 6), 3: (6, 1, 2, 3, 4, 5)
+
+VirtualAssign(s1, to, to_path, from, from_path, "summary2", "") :-
+    SummaryFlow(m1, n1, p1, m2, n2, p2, ""),
+    m1 != m2,
+    CallEdge(s1, m1, ""),
+    CallEdge(s2, m2, ""),
+    CCall_ActualParam(s1, n1, to, to_actual_path),
+    CCall_ActualParam(s2, n2, from, from_actual_path),
+    MatchComputedPrefix(to_path, to_actual_path, p1),
+    MatchComputedPrefix(from_path, from_actual_path, p2),
+    (to != from; to_path != from_path).
+
+isComputedAccessPath(dGdH) :-
+    MatchComputedPrefix(dFH, dF, dH),
+    dH != "",
+    Vertex(x, dFH),
+    (   VirtualAssign(_, y, dG, x, dF, _, _)
+    ;   VirtualAssign(_, x, dF, y, dG, _, _)),
+    dGdH = cat(dG, dH),
+    !contains(STAR,dGdH),
+    0 = @AccessPathCycle(dGdH),
+    n = @AccessPathSize(dGdH),
+    DynamicAccessPaths_MaxLength(k),
+    n <= k,
+    !CVar_isGlobal(x),
+    !CVar_isGlobal(y).
+.plan 1: (2, 1, 3, 4), 2: (3, 2, 1, 4)
+
+// -----------------------------------------------------------------------
+// field propagation
+
+#ifndef CTADL_DISABLE_FIELD_PROPAGATION
+
+// reference, simple impl is in ./graph/fieldprop_ref.dl
+#include "graph/fieldprop.dl"
+
+#endif
+
+// ---------------------------------------------------------------------------
+// Aliasing on variables
+
+// calculate alias sets based only on the original program, i.e., this uses
+// CInsn_Move we do this because they represent real code assignments (bounded
+// and confident), not derived flows
+#define AliasEdge2(dst, dstap, src, srcap) (CInsn_Move(_, dst, dstap, src, srcap), !CVar_isGlobal(dst), !CVar_isGlobal(src))
+AliasedBy(xv, xp, yv, yp, "") :- AliasedBy_Target(xv), AliasEdge2(yv, yp, xv, xp).
+AliasedBy(x, xp, z, zp, c) :- AliasedBy(x, xp, y, yp, c), AliasEdge2(z, zp, y, yp).
+
+// Send intra-object aliases onto main aliasing relation.
+AliasedBy(a, f, a, fg, cx) :-
+    IntraObjectAliasedBy(a, f, g, cx),
+    fg = cat(f,g),
+    AliasedBy_Target(a).
+
+// x.FG aliased by x.F
+IntraObjectAliasedBy(x, F, G, "") :-
+    // x.F.G <- x.G so x points to itself
+    VirtualAssign(insn, x, FG, x, F, _, _),
+    MatchComputedPrefix(FG, F, G),
+    CCall_ActualParam(insn, _, x, _).
+
+// Follows intra-aliased objects through assignments.
+IntraObjectAliasedBy(a, H, G, cx) :-
+    IntraObjectAliasedBy(x, F, G, cx),
+    CInsn_Move(_, a, H, x, F),
+    MatchComputedPrefix(_HG, H, G).
+
+// Follows intra-aliased objects through assignments.
+IntraObjectAliasedBy(y, H, G, cx) :-
+    IntraObjectAliasedBy(x, "", G, cx),
+    CInsn_Move(_, y, H, x, "").
+
+// Chases local aliases of formal parameters so that if those locals are
+// written two, we may use it to create a new summary.
+AliasedBy_Target(param) :- CFunction_FormalParam(_, _, param).
+
+// Propagates aliases between formals.
+SummaryFlow(func, na, f, func, nb, g, ctx) :-
+    AliasedBy(a, f, b, g, ctx),
+    CFunction_FormalParam(func, na, a),
+    CFunction_FormalParam(func, nb, b),
+    !CFunction_OmitSummaries(func),
+    !DisableGlobalDataFlow().
+
+// Discovers summaries where data flows to a local which is an alias of a
+// formal.
+SummaryFlow(m, n1, p14, m, n3, p3, "") :-
+    LocallyReachable(v2, p24, f3, p3, ""),
+    AliasedBy(f1, p1, v2, p2, ""),
+    MatchComputedPrefix(p24, p2, p4),
+    p14 = cat(p1,p4),
+    isComputedAccessPath(p14),
+    CFunction_FormalParam(m, n3, f3),
+    CFunction_FormalParam(m, n1, f1),
+    (n1 != n3; p14 != p3),
+    (p14 != ""; CFunction_isFormalParamByRef(m, n1)),
+    !CFunction_OmitSummaries(m),
+    !DisableGlobalDataFlow().
+
+// Propagates flows back onto formals when an object aliases itself
+VirtualAssign(I, param, param_path, param, F, "special", "") :-
+    CInsn_Move(I, param, F, tmp, ""),
+    IntraObjectAliasedBy(tmp, "", G, ""),
+    param_path = cat(F, G),
+    isComputedAccessPath(param_path).
+
+// Star version
+isComputedAccessPath(cat(F,".*")),
+VirtualAssign(I, param, cat(F,".*"), param, F, "special-star", "") :-
+    CInsn_Move(I, param, F, tmp, ""),
+    IntraObjectAliasedBy(tmp, "", G, ""),
+    !CisAccessPath(cat(F, G)),
+    EnableStar().
+
+// ---------------------------------------------------------------------------
+// star abstraction compensates for unbounded access paths with a ".*" field
+
+#include "graph/star.dl"
+
+// Optionally, we can generate assignments like "x.* = x.foo" to compute data
+// flow to star vertices. The current implementation blows up a bit, so, it's
+// an option.
+.decl MatchAPStar()
+MatchAPStar() :- CTADLConfig_Input("CTADL_ENABLE_MATCH_ACCESS_PATHS_TO_STAR", 1).
+
+// we want to flow unstarred APs to a single, relevant star ap.
+// so x.foo.bar.baz should flow to x.foo.bar.*
+// x.field to x.*
+
+#if 0
+// XXX can be inline
+.decl LastAccessPathNonEmptySplit(ap: symbol, prefix: symbol, suffix: symbol)
+
+// Finds the last split of an AP such that the prefix.* is an AP
+// .foo.bar.baz -> .foo.bar -> .foo -> ""
+// .foo 
+LastAccessPathNonEmptySplit(ap, prefix, suffix) :-
+    CisAccessPath(ap), !contains(STAR, ap),
+    i = max j : {
+        DotIndex(ap, j),
+        prefix = substr(ap, 0, j),
+        // XXX this could be isComputedAccessPath except that android-intents
+        // creates a cyclic aggregation. investigate later.
+        CisAccessPath(cat(prefix, STAR))
+        //isComputedAccessPath(cat(prefix, STAR))
+    },
+    prefix = substr(ap, 0, i),
+    suffix = substr(ap, i, strlen(ap)-i+1),
+    MatchAPStar().
+
+VirtualAssign(insn, v, star_ap, v, ap, "starassign", "") :-
+    Vertex(v, ap),
+    LastAccessPathNonEmptySplit(ap, prefix, _),
+    star_ap = cat(prefix, STAR),
+    Vertex(v, star_ap),
+    CVar_InFunction(v, function),
+    insn = cat(function, "/ctadl/star"),
+    MatchAPStar().
+.plan 1: (3, 1, 2, 4, 5)
+
+VirtualAssign(insn, v, star_ap, v, ap, "starassign", "") :-
+    Vertex(v, ap),
+    // ap like .foo, no more
+    !contains(STAR, ap), ap != "", !DotIndex(ap, _),
+    star_ap = STAR,
+    Vertex(v, star_ap),
+
+    CVar_InFunction(v, function),
+    insn = cat(function, "/ctadl/star"),
+    MatchAPStar().
+.plan 1: (2, 1, 3, 4)
+#endif
+
+
+.decl HasStar(ap: CAccessPath)
+HasStar(ap) :-
+    isComputedAccessPath(ap),
+    contains(STAR, ap).
+
+CTADLError(msg) :-
+    HasStar(ap),
+    strlen(ap) >= strlen(STAR),
+    start = range(0, strlen(ap)-strlen(STAR)),
+    substr(ap, start, strlen(STAR)) = STAR,
+    start != strlen(ap) - 4,
+
+    //substr(ap, strlen(ap) - strlen(STAR), strlen(STAR)) != STAR,
+    msg = cat("AP with only STAR (.*) not at end: ", ap).
+
+// ---------------------------------------------------------------------------
+// hybrid inlining
+
+#include "hybrid_inlining.dl"
+
+// ---------------------------------------------------------------------------
+// models
+
+#ifndef CTADL_DISABLE_MODELS
+
+CisAccessPath(p1),
+CisAccessPath(p2),
+SummaryFlow(m1, n1, p1, m2, n2, p2, "") :-
+    CFunction_ModelAssign(m1, n1, p1, m2, n2, p2),
+    CisFunction(m1),
+    CFunction_FormalParam(m1, n1, _),
+    CisFunction(m2),
+    CFunction_FormalParam(m2, n2, _),
+    (m1 != m2; n1 != n2; p1 != p2),
+    !DisableGlobalDataFlow().
+
+isComputedAccessPath(sp2),
+CisAccessPath(p1),
+CisAccessPath(p2),
+SummaryFlow(func, n1, p1, func, n2, sp2, "") :-
+    CFunction_ModelInfluenceFrom(func, n1, p1, n2, p2),
+    CisFunction(func),
+    CFunction_FormalParam(func, n1, _),
+    CFunction_FormalParam(func, n2, _),
+    sp2 = cat(p2, STAR),
+    (n1 != n2; p1 != sp2),
+    !DisableGlobalDataFlow().
+
+isComputedAccessPath(sp1),
+CisAccessPath(p1),
+CisAccessPath(p2),
+SummaryFlow(func, n1, sp1, func, n2, p2, "") :-
+    CFunction_ModelInfluenceTo(func, n1, p1, n2, p2),
+    CisFunction(func),
+    CFunction_FormalParam(func, n1, _),
+    CFunction_FormalParam(func, n2, _),
+    sp1 = cat(p1, STAR),
+    (n1 != n2; sp1 != p2),
+    !DisableGlobalDataFlow().
+
+VirtualAssign(insn, v_to, ap_to, v_from, ap_from, typestr, "") :-
+    CInsn_ModelAssign(insn, v_to, ap_to, v_from, ap_from, typestr).
+
+#endif
+
+
+// ---------------------------------------------------------------------------
+
+#ifdef ALL_OUTPUTS
+.output LocallyReachable(CTADL_OUTPUT_DB_IO)
+
+.decl ErrorModel(msg: symbol)
+.output ErrorModel(CTADL_OUTPUT_DB_IO)
+
+ErrorModel(msg) :-
+    CFunction_ModelAssign(m1, n1, p1, m2, n2, p2),
+    !SummaryFlow(m1, n1, p1, m2, n2, p2, ""),
+    msg = cat("found invalid model: ", m1, ": ", to_string(n1), ".", p1,
+              " from ",
+              m2, ": ", to_string(n2), ".", p2).
+
+#endif // ALL_OUTPUTS
+
+CTADLStats("initial-vertex", n) :- n = count : { InitialVertex(_, _) }.
+CTADLStats("vertex", n) :- n = count : { Vertex(_, _) }.
+CTADLStats("virtual-assign", n) :- n = count : { VirtualAssign(_, _, _, _, _, _, "") }.
+CTADLStats("virtual-assign-summary", n) :- n = count : { VirtualAssign(_, _, _, _, _, "summary", "") }.
+CTADLStats("virtual-assign-summary2", n) :- n = count : { VirtualAssign(_, _, _, _, _, "summary2", "") }.
+CTADLStats("virtual-assign-alias", n) :- n = count : { VirtualAssign(_, _, _, _, _, "alias", "") }.
+CTADLStats("virtual-assign-fp", n) :- n = count : { VirtualAssign(_, _, _, _, _, "fp", "") }.
+CTADLStats("virtual-assign-move", n) :- n = count : { VirtualAssign(_, _, _, _, _, "move", "") }.
+CTADLStats("virtual-alloc", n) :- n = count : { VirtualAlloc(_, _, _, "") }.
+CTADLStats("computed-access-path", n) :- n = count : { isComputedAccessPath(_) }.
+CTADLStats("star-access-path", n) :- n = count : { isComputedAccessPath(ap), contains(STAR, ap) }.
+CTADLStats("summary-flow", n) :- n = count : { SummaryFlow(m1, _, _, m2, _, _, ""), m1 = m2 }.
+CTADLStats("summary2-flow", n) :- n = count : { SummaryFlow(m1, _, _, m2, _, _, ""), m1 != m2 }.
+CTADLStats("ComputedAccessPathNonEmptySplit", n) :- n = count : { ComputedAccessPathNonEmptySplit(_, _, _) }.
+CTADLStats("LocallyReachable", n) :- n = count : { LocallyReachable(_, _, _, _, "") }.
+CTADLStats("LocallyReachableSources", n) :- n = count : { LocallyReachableSources(_, _) }.
+CTADLStats("alias-entries", n) :- n = count : { AliasedBy(_, _, _, _, _) }.
+CTADLStats("alias-sets", n) :- n = count : { AliasedBy_Target(_) }.

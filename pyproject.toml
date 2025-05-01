@@ -1,0 +1,25 @@
+[build-system]
+requires = [
+    "setuptools>=42",
+    "wheel"
+]
+build-backend = "setuptools.build_meta"
+
+[tool.pyright]
+include = [ "bin/ctadl", "src", "tests"]
+exclude = [
+    "**/__pycache__"
+    ]
+ignore = []
+
+reportMissingImports = false
+reportMissingTypeStubs = false
+
+pythonVersion = "3.9"
+
+executionEnvironments = [
+  { root = "src" }
+]
+
+[tool.isort]
+profile = "black"

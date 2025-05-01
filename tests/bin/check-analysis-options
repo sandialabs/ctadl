@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+
+set -e
+set -o pipefail
+set -x
+
+top="$(git rev-parse --show-toplevel)"
+outdir="$top/ctadl-test-output"
+cd $outdir
+
+ctadl import pcode $(nix build --inputs-from . nixpkgs#curl --no-link --json | jq -r ".[0].outputs.bin")/bin/curl -o out/curl-pcode
+
+# Test some options
+for index_opt in --match-star '--cha --no-hybrid-inlining' --star; do
+    ctadl --dir out/curl-pcode index -f $index_opt
+done

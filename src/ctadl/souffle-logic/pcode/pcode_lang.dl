@@ -1,0 +1,815 @@
+// run Decompiler Parameter ID
+
+#include "ctadl_schema.dl"
+#include "pcode/types.dl"
+#include "pcode/declarations.dl"
+
+// ---------------------------------------------------------------------------
+// Varnodes
+
+#define TRUE 1
+#define FALSE 0
+
+#define isConstVarnode(v) \
+    VNODE_SPACE(v, "const")
+
+#define PCode_MkArrayIndex(offset) cat("[", offset, "]")
+#define PCode_MkFieldAccess(offset) cat(".", offset)
+#define PCode_MkFormal(f, name) cat(f, ":", name)
+
+#define SAME_BB(bb, i0, i1) \
+    (PCODE_INDEX_IN_BB(bb, i0, _), PCODE_INDEX_IN_BB(bb, i1, _))
+
+#include "pcode/typeprop.dl"
+
+CReturnParameter(PCODE_RET_ARG_INDEX).
+
+// interface
+.decl FuncPtr(vn: PCodeVarnode, hfunc_id: PCodeHighFunc)
+.decl AssignFuncPtrInstruction(i: PCodeInstruction, from: PCodeVarnode, hfunc_id: PCodeHighFunc)
+.decl CallInstruction(i: PCodeInstruction, func_addr: symbol) inline
+
+// limitations:
+// don't handle returns without a value
+// no need to handle branch
+// don't handle stores of const val
+// dont handle mem ops with addrs of pointer arithmetic
+// don't handle loads of void *
+// if i0 unhandled, a subsequent load/store/ptradd/ptrsub also unhandled
+// ptrsubs that add we ignore for now
+// ptradd of const without type info we ignore for now
+// load/store of a pointer in pieces we cry about
+// don't warn about load/store defined in other block
+// no need to warn about GEPs we find
+// if all inputs are const, don't handle
+
+
+// a source varnode is not the output of any instruction
+// e.g. stack, register, ram
+.decl isSourceVarnode(vn: PCodeVarnode)
+
+// an externally defined varnode is one we assume to be well defined if it is
+// dereference directly
+.decl isExternallyDefinedVarnode(vn: PCodeVarnode)
+
+// either a PCODE COPY or INDIRECT or MULTIEQUAL
+.decl DirectCopy(vn_to: PCodeVarnode, vn_from: PCodeVarnode)
+// either a DirectCopy or a CAST
+.decl MaybeCastCopy(vn_to: PCodeVarnode, vn_from: PCodeVarnode)
+
+// COPY or INDIRECT or MULTIEQUAL
+.decl CopyInsn(i: PCodeInstruction)
+// CAST
+.decl CastInsn(i: PCodeInstruction)
+
+// i is an effective load af var.ap.
+// It might be a LOAD instruction. or it might be a subpiece of a load
+// corresponding to a known field. See CastLoadSubpiece
+.decl Load(i: PCodeInstruction, var: PCodeVarnode, ap: CAccessPath)
+
+// i is a STORE to var.ap
+// This instruction is at the highest level and is use to translate to CTADL IR
+.decl Store(i: PCodeInstruction, var: PCodeVarnode, ap: CAccessPath)
+
+// i is a GEPInsn instruction that accesses var.ap. the type of the field is field_type.
+.decl GEP(i: PCodeInstruction, var: PCodeVarnode, ap: CAccessPath, field_type: PCodeType)
+
+// Parameter from the function prototype
+.decl PCODE_FormalParam(f: PCodeHighFunc, n: number, v: PCodeVarnode, name: symbol) inline
+
+// INDIRECT instructions associated with callsite
+.decl IndirectForCallSite(callsite: CInsn, indirect_insn: CInsn)
+//.output IndirectForCallSite(CTADL_OUTPUT_DB_IO)
+
+isSourceVarnode(vn) :-
+    VNODE_SPACE(vn, _),
+    !PCODE_OUTPUT(_, vn).
+
+
+isExternallyDefinedVarnode(vn) :-
+    isSourceVarnode(vn).
+
+isExternallyDefinedVarnode(vn) :-
+    CallInstruction(i, _),
+    PCODE_OUTPUT(i, vn).
+
+isExternallyDefinedVarnode(vn) :-
+    isExternallyDefinedVarnode(vn0),
+    MaybeCastCopy(vn, vn0).
+
+
+DirectCopy(vn_to, vn_from) :-
+    PCODE_MNEMONIC(i, mn),
+    (mn = "COPY"; mn = "MULTIEQUAL"),
+    PCODE_INPUT(i, _, vn_from),
+    PCODE_OUTPUT(i, vn_to),
+    vn_from != vn_to.
+
+DirectCopy(vn_to, vn_from) :-
+    PCODE_MNEMONIC(i, mn),
+    mn = "INDIRECT",
+    PCODE_INPUT(i, 0, vn_from),
+    PCODE_OUTPUT(i, vn_to),
+    vn_from != vn_to.
+
+
+MaybeCastCopy(vn_to, vn_from) :-
+    DirectCopy(vn_to, vn_from).
+
+MaybeCastCopy(vn_to, vn_from) :-
+    PCODE_MNEMONIC(i, "CAST"),
+    PCODE_INPUT(i, 0, vn_from),
+    PCODE_OUTPUT(i, vn_to),
+    vn_from != vn_to.
+
+
+CopyInsn(i) :-
+    PCODE_MNEMONIC(i, mn),
+    (mn = "COPY"; mn = "MULTIEQUAL"; mn = "INDIRECT").
+
+CastInsn(i) :-
+    PCODE_MNEMONIC(i, mn),
+    mn = "CAST".
+
+
+
+// ---------------------------------------------------------------------------
+// pointer constant offsets
+
+// we want to be able to reason about fields we don't know about in a
+// reasonable way. so if we have:
+//
+// local_addr = PTRSUB EBP -44
+// arg = (char *)(local_addr + 1)
+//
+// we want to treat this as arg = local_addr.*
+
+// output is var.*
+.decl AssignAbstractPointerContents(i: PCodeInstruction, base: PCodeVarnode)
+
+AssignAbstractPointerContents(i, base) :-
+    GEPInsn(i),
+    !FieldAccess(i, _, _, _),
+    PCODE_INPUT(i, 0, base),
+    PCODE_INPUT(i, 1, offset),
+    isConstVarnode(offset),
+    isExternallyDefinedVarnode(base).
+
+CInsn_Move(i, out, "", base, STAR) :-
+    AssignAbstractPointerContents(i, base),
+    PCODE_OUTPUT(i, out).
+
+
+// ---------------------------------------------------------------------------
+// field access
+
+// We use types to figure out the type and the field/offset being accessed.
+
+.decl GEPInsn(i: PCodeInstruction)
+
+GEPInsn(i) :-
+    PCODE_MNEMONIC(i, mn),
+    (mn = "PTRSUB"; mn = "PTRADD").
+
+.decl GEPInsn_isNested(i: PCodeInstruction)
+
+GEPInsn_isNested(i2) :-
+    GEPInsn(i2),
+    PCODE_INPUT(i2, 0, i2_in),
+    (MaybeCastCopy(i2_in, i1_out); i1_out = i2_in),
+    PCODE_OUTPUT(i1, i1_out),
+    GEPInsn(i1),
+    i1 != i2,
+    // i1 and i2 are in same bb
+    PCODE_INDEX_IN_BB(bb, i1, index1),
+    PCODE_INDEX_IN_BB(bb, i2, index2),
+    // and i1 always executes before i2
+    index2 > index1.
+
+
+
+GEP(i, structure_ptr, field_ap, field_type) :-
+    FieldAccess(i, structure_ptr, field_ap, field_type),
+    !GEPInsn_isNested(i).
+
+GEP(i1, base, field_ap, field_type) :-
+    GEP(i0, base, ap0, _type0),
+    PCODE_OUTPUT(i0, out0),
+    PCODE_INPUT(i1, 0, out0),
+    SAME_BB(bb, i0, i1),
+    i0 != i1,
+    FieldAccess(i1, _, ap1, field_type),
+    field_ap = cat(ap0, ap1).
+
+// propagate GEPInsn through cast
+// If there is a GEP output that is then casted, and we know the resultant
+// type of the cast, make a new GEPInsn at that type
+GEP(i1, base, ap, type1) :-
+    GEP(i0, base, ap, _type0),
+    PCODE_OUTPUT(i0, out0),
+    PCODE_INPUT(i1, 0, out0),
+    PCODE_MNEMONIC(i1, "CAST"),
+    PCODE_OUTPUT(i1, out1),
+    VarnodeType_Reaching(out1, type1).
+//.plan 1: (6, 5, 4, 3, 2, 1)
+
+GEP(i1, base, ap, type0) :-
+    GEP(i0, base, ap, type0),
+    PCODE_OUTPUT(i0, out0),
+    PCODE_INPUT(i1, 0, out0),
+    PCODE_MNEMONIC(i1, "CAST"),
+    PCODE_OUTPUT(i1, out1),
+    !VarnodeType_Reaching(out1, _).
+
+Load(i, var, ap) :-
+    isExternallyDefinedVarnode(addr),
+    PCODE_INPUT(i, 1, addr),
+    PCODE_MNEMONIC(i, "LOAD"),
+    var = addr,
+    ap = "[0]".
+
+Load(i, var, ap) :-
+    GEP(i_gep, var, ap, _field_ty),
+    PCODE_OUTPUT(i_gep, gep_out),
+    PCODE_INPUT(i, 1, gep_out),
+    PCODE_MNEMONIC(i, "LOAD"),
+    PCODE_OUTPUT(i, _out).
+
+// a Load, above, may be used for a subsequent load in the code:
+// r->foo->bar
+// So make a new GEP with the appropriate element type so that this translates to
+// r.foo.bar
+GEP(i, var, ap, elt_ty) :-
+    GEP(i_gep, var, ap, ptr_ty),
+    PCODE_OUTPUT(i_gep, gep_out),
+    PCODE_INPUT(i, 1, gep_out),
+    Load(i, var, ap),
+    DereferenceType(ptr_ty, elt_ty).
+
+Store(i, var, ap) :-
+    isExternallyDefinedVarnode(addr),
+    PCODE_INPUT(i, 1, addr),
+    PCODE_MNEMONIC(i, "STORE"),
+    var = addr,
+    ap = "[0]".
+
+Store(i, var, ap) :-
+    GEP(i_gep, var, ap, _),
+    PCODE_OUTPUT(i_gep, gep_out),
+    PCODE_INPUT(i, 1, gep_out),
+    PCODE_MNEMONIC(i, "STORE").
+
+
+.decl CastLoadSubpiece(i: PCodeInstruction)
+
+Load(i2, var, field),
+CastLoadSubpiece(i_m1) :-
+    GEP(i_m1, var, field, field_ty),
+    PCODE_OUTPUT(i_m1, gep_out),
+    PCODE_INPUT(i0, 0, gep_out),
+    PCODE_MNEMONIC(i0, "CAST"),
+    PCODE_OUTPUT(i0, cast_out),
+    PCODE_INPUT(i1, 1, cast_out),
+    PCODE_MNEMONIC(i1, "LOAD"),
+    PCODE_OUTPUT(i1, load_out),
+    PCODE_INPUT(i2, 0, load_out),
+    PCODE_MNEMONIC(i2, "SUBPIECE"),
+    PCODE_OUTPUT(i2, subpiece_out),
+    TYPE_LENGTH(field_ty, field_size),
+    VNODE_SIZE(subpiece_out, subpiece_out_size),
+    field_size = subpiece_out_size.
+
+
+
+PCODE_FormalParam(f, n, v, name) :-
+    HFUNC_PROTO(f, p),
+    PROTO_PARAMETER(p, n, hs),
+    SYMBOL_HVAR(hs, hv),
+    HVAR_NAME(hv, name),
+    HVAR_REPRESENTATIVE(hv, v).
+
+// ---------------------------------------------------------------------------
+
+CisAccessPath(STAR).
+
+CisAccessPath(ap),
+CInsn_Use(vn, ap) :-
+    Load(_, vn, ap);
+    Store(_, vn, ap);
+    FieldAccess(_, vn, ap, _).
+
+// ---------------------------------------------------------------------------
+// vars
+
+
+IndirectForCallSite(insn, indirect_insn) :-
+    CallInstruction(insn, _),
+    PCODE_TARGET(insn, target),
+    PCODE_TARGET(indirect_insn, target),
+    PCODE_MNEMONIC(indirect_insn, "INDIRECT").
+
+// Creates a formal threaded globals parameter for each global offset
+CVar_Name(var, cat("ram@", to_string(offset))),
+CVar_InFunction(var, func),
+CFunction_isFormalParamByRef(func, -offset_index),
+CFunction_FormalParam(func, -offset_index, var) :-
+    VNODE_SPACE(global_vn, "ram"),
+    VNODE_OFFSET_N(global_vn, offset),
+    OFFSET_INDEX(offset, offset_index),
+    VNODE_HFUNC(global_vn, func),
+    var = cat(func, ":global#", to_string(offset_index)).
+
+// Each indirect global varnode that is associated with the call site needs to
+// be passed as a special threaded globals parameter
+CCall_ActualParam(insn, -offset_index, var, path) :-
+    IndirectForCallSite(insn, indirect_insn),
+    PCODE_INPUT(indirect_insn, 0, global_vn),
+    VNODE_SPACE(global_vn, "ram"),
+    VNODE_OFFSET_N(global_vn, offset),
+    OFFSET_INDEX(offset, offset_index),
+    var = global_vn,
+    path = "".
+
+CVar_InFunction(vn, f) :-
+    VNODE_HFUNC(vn, f).
+
+// ---------------------------------------------------------------------------
+// functions
+
+CisFunction(f) :- HFUNC_FUNC(f, _).
+CFunction_Name(f, n) :- HFUNC_NAME(f, n).
+
+CVar_SourceInfo(v, SOURCE_INFO_NAME_KEY, name) :-
+    VNODE_HVAR(v, hv),
+    HVAR_NAME(hv, name).
+
+CVar_SourceInfo(vn, SOURCE_INFO_NAME_KEY, name) :-
+    PCODE_MNEMONIC(i, "PTRSUB"),
+    PCODE_OUTPUT(i, vn),
+    (   PCODE_INPUT(i, 0, zero), PCODE_INPUT(i, 1, inp)
+    ;   PCODE_INPUT(i, 1, zero), PCODE_INPUT(i, 0, inp)),
+    isConstVarnode(zero),
+    VNODE_OFFSET_N(zero, 0),
+    VNODE_HVAR(inp, hv),
+    HVAR_NAME(hv, name).
+
+CVar_SourceInfo(vn, SOURCE_INFO_NAME_KEY, name) :-
+    PCODE_MNEMONIC(i, "PTRSUB"),
+    PCODE_OUTPUT(i, vn),
+    (   PCODE_INPUT(i, 0, zero), PCODE_INPUT(i, 1, inp)
+    ;   PCODE_INPUT(i, 1, zero), PCODE_INPUT(i, 0, inp)),
+    isConstVarnode(zero),
+    VNODE_OFFSET_N(zero, 0),
+    VNODE_HVAR(inp, hv),
+    SYMBOL_HVAR(sym, hv),
+    SYMBOL_NAME(sym, name).
+
+CVar_Name(v, name) :-
+    VNODE_NAME(v, name).
+
+CisNamespace(func) :- CisFunction(func).
+
+// Ghidra sometimes makes registers into formals. But we are treating registers
+// as global. So create fresh parameter names for each formal and copy them to
+// the parameter varnode
+CSourceInfo_Address(var_addr_id),
+CSourceInfo_Address(insn_addr_id),
+CAddress_AbsoluteAddress(var_addr_id, func_addr),
+CAddress_AbsoluteAddress(insn_addr_id, func_addr),
+CAddress_Kind(var_addr_id, "data"),
+CAddress_Kind(insn_addr_id, "instruction"),
+CSourceInfo_Location(param, 1, var_addr_id),
+CSourceInfo_Location(move_insn, 1, insn_addr_id),
+
+CVar_Name(param, param_name),
+CVar_SourceInfo(param, SOURCE_INFO_NAME_KEY, param_name),
+CInsn_InFunction(move_insn, 0, f),
+CInsn_Move(move_insn, v, "", param, ""),
+CVar_InFunction(param, f),
+CFunction_FormalParam(f, n, param) :-
+    PCODE_FormalParam(f, n, v, param_name),
+    !HFUNC_ISEXT(f),
+    param = PCode_MkFormal(f, cat("@", param_name)),
+    move_insn = cat(f, "!copy_formal"),
+    HFUNC_EP(f, ep),
+    HFUNC_LOCAL_EP(ep, func_addr),
+    var_addr_id = ord(param),
+    insn_addr_id = ord(move_insn).
+
+// only 1 file
+CSourceInfo_File(1, file) :-
+// Using absolute paths for Ghidra atm, so don't use UriBaseId
+//CFile_UriBaseId(1, "BINROOT") :-
+    PROGRAM_FILE(file).
+
+CSourceInfo_Location(param, 1, region_id),
+CSourceInfo_Address(region_id),
+CAddress_AbsoluteAddress(region_id, func_addr),
+CAddress_Kind(region_id, "data"),
+CVar_Name(param, param_name),
+CVar_SourceInfo(param, SOURCE_INFO_NAME_KEY, param_name),
+CVar_InFunction(param, f),
+CFunction_FormalParam(f, n, param) :-
+    PCODE_FormalParam(f, n, _, param_name),
+    HFUNC_ISEXT(f),
+    param = PCode_MkFormal(f, cat("@", param_name)),
+    HFUNC_EP(f, ep),
+    HFUNC_LOCAL_EP(ep, func_addr),
+    region_id = ord(param).
+
+// return param
+CSourceInfo_Location(retparam, 1, region_id),
+CSourceInfo_Address(region_id),
+CAddress_AbsoluteAddress(region_id, addr),
+CAddress_Kind(region_id, "data"),
+CVar_Name(retparam, "@ret"),
+CVar_InFunction(retparam, f),
+CFunction_isFormalParamByRef(f, -1),
+CFunction_FormalParam(f, PCODE_RET_ARG_INDEX, retparam) :-
+    HFUNC_FUNC(f, _),
+    HFUNC_EP(f, ep_addr),
+    HFUNC_LOCAL_EP(ep_addr, addr),
+    retparam = PCode_MkFormal(f, "@ret"),
+    region_id = ord(retparam).
+
+// copy return'd varnode into return param
+CInsn_InFunction(i, index, f),
+CInsn_Move(i, retparam, "", vn, "") :-
+    PCODE_MNEMONIC(i, "RETURN"),
+    PCODE_INPUT(i, 1, vn),
+    PCODE_PARENT(i, bb),
+    BB_HFUNC(bb, f),
+    retparam = PCode_MkFormal(f, "@ret"),
+    PCODE_INDEX(i, index).
+
+
+CFunction_Arity(f, n) :-
+    HFUNC_PROTO(f, p),
+    PROTO_PARAMETER_COUNT(p, n).
+
+// call it byref if type is pointer
+CFunction_isFormalParamByRef(f, n) :-
+    PCODE_FormalParam(f, n, v, _),
+    HVAR_REPRESENTATIVE(h, v),
+    HVAR_TYPE(h, t),
+    TYPE_POINTER(t).
+
+CInsn_InFunction(i, index, f) :-
+    (CInsn_Move(i, _, _, _, _); CallInstruction(i, _)),
+    PCODE_PARENT(i, bb),
+    PCODE_INDEX(i, index),
+    BB_HFUNC(bb, f).
+
+#if 0
+// This does happen. It looks like it happens when there is no signature and
+// not when there are simply missing types for parameters somewhere in the
+// middle of the parameter list.
+CTADLError(cat("no parameter ", to_string(k), " for ", func)) :-
+    HFUNC_PROTO(func, proto_id),
+    PROTO_PARAMETER_COUNT(proto_id, n),
+    k = range(0, n-1),
+    !PROTO_PARAMETER(proto_id, k, _).
+#endif
+
+// signature for parameters 0..n
+.decl PartialFuncSignature(id: PCodeHighPrototype, n: number, sig: symbol)
+
+PartialFuncSignature(id, 0, sig) :-
+    PROTO_PARAMETER(id, 0, hs),
+    PROTO_PARAMETER_DATATYPE(hs, type),
+    sig = type.
+
+PartialFuncSignature(id, n+1, sig2) :-
+    PartialFuncSignature(id, n, sig),
+    PROTO_PARAMETER(id, n+1, hs),
+    PROTO_PARAMETER_DATATYPE(hs, type),
+    sig2 = cat(sig, ",", type).
+
+CFunction_Signature(func, sig) :-
+    HFUNC_PROTO(func, proto_id),
+    PROTO_PARAMETER_COUNT(proto_id, n),
+    PartialFuncSignature(proto_id, n-1, proto_sig),
+    (   PROTO_IS_VOID(proto_id), rettype = "void"
+    ;   !PROTO_IS_VOID(proto_id), PROTO_RETTYPE(proto_id, rettype)),
+    (   PROTO_IS_VARARG(proto_id), varargs = ",..."
+    ;   !PROTO_IS_VARARG(proto_id), varargs = ""),
+    (   PROTO_IS_INLINE(proto_id), inln = "inline "
+    ;   !PROTO_IS_INLINE(proto_id), inln = ""),
+    (   PROTO_IS_CONSTRUCTOR(proto_id), constructor = " constructor"
+    ;   !PROTO_IS_CONSTRUCTOR(proto_id), constructor = ""),
+    (   PROTO_IS_DESTRUCTOR(proto_id), destructor = " destructor"
+    ;   !PROTO_IS_DESTRUCTOR(proto_id), destructor = ""),
+    (   PROTO_HAS_THIS(proto_id), has_this = " has_this"
+    ;   !PROTO_HAS_THIS(proto_id), has_this = ""),
+    sig = cat(inln, rettype, "(", proto_sig, varargs, ")", constructor, destructor, has_this).
+
+// ---------------------------------------------------------------------------
+// calls
+
+// direct call
+CInsn_Call(i, f) :-
+    CallInstruction(i, func_op),
+    VNODE_ADDRESS(func_op, a),
+    (   HFUNC_LOCAL_EP(ep, a), HFUNC_EP(f, ep)
+    ;   HFUNC_EP(f, a)).
+
+CCall_ActualParam(i, PCODE_RET_ARG_INDEX, v, "") :-
+    CallInstruction(i, _),
+    PCODE_OUTPUT(i, v).
+
+CCall_ActualParam(i, n-1, v, "") :-
+    CallInstruction(i, _),
+    PCODE_INPUT(i, n, v),
+    n > 0. // skip input 0, it's not a function actual parameter
+
+CCall_ActualParam(i, PCODE_FUNC_ARG_INDEX, func_op, ""),
+CCall_VirtualBase(i, PCODE_FUNC_ARG_INDEX) :-
+    PCODE_MNEMONIC(i, "CALLIND"),
+    PCODE_INPUT(i, 0, func_op).
+
+// ---------------------------------------------------------------------------
+// moves
+
+CInsn_Move(i, v_to, "", v_from, ap_from) :-
+    Load(i, v_from, ap_from),
+    PCODE_OUTPUT(i, v_to).
+
+CInsn_Move(i, v_to, ap_to, v_from, "") :-
+    Store(i, v_to, ap_to),
+    PCODE_INPUT(i, 2, v_from).
+    
+CInsn_Move(i, v_to, "", v_from, "") :-
+    PCODE_MNEMONIC(i, mnemonic),
+    ( mnemonic = "INT_ADD";
+      mnemonic = "INT_AND";
+      mnemonic = "INT_SRIGHT";
+      mnemonic = "INT_RIGHT";
+      mnemonic = "INT_MULT";
+      mnemonic = "INT_OR";
+      mnemonic = "INT_SDIV";
+      mnemonic = "INT_LEFT";
+      mnemonic = "INT_SREM";
+      mnemonic = "INT_SUB";
+      mnemonic = "INT_DIV";
+      mnemonic = "INT_REM";
+      mnemonic = "INT_XOR";
+      mnemonic = "INT_CARRY";
+      mnemonic = "INT_SCARRY";
+      mnemonic = "INT_SBORROW";
+      mnemonic = "FLOAT_ADD";
+      mnemonic = "FLOAT_DIV";
+      mnemonic = "FLOAT_MULT";
+      mnemonic = "FLOAT_SUB";
+      mnemonic = "BOOL_AND";
+      mnemonic = "BOOL_OR";
+      mnemonic = "BOOL_XOR";
+      mnemonic = "COPY";
+      mnemonic = "CAST";
+      mnemonic = "MULTIEQUAL";
+      mnemonic = "TRUNC";
+      mnemonic = "INT_SEXT";
+      mnemonic = "INT_ZEXT";
+      mnemonic = "INT2FLOAT";
+      mnemonic = "INT_2COMP";
+      mnemonic = "INT_NEGATE";
+      mnemonic = "INT_NOTEQUAL";
+      mnemonic = "INT_EQUAL";
+      mnemonic = "INT_SLESSEQUAL";
+      mnemonic = "INT_LESSEQUAL";
+      mnemonic = "INT_SLESS";
+      mnemonic = "INT_LESS";
+      mnemonic = "BOOL_NEGATE";
+      mnemonic = "FLOAT_NEG";
+      mnemonic = "FLOAT_ABS";
+      mnemonic = "FLOAT_SQRT";
+      mnemonic = "FLOAT_CEIL";
+      mnemonic = "FLOAT_FLOOR";
+      mnemonic = "FLOAT_ROUND";
+      mnemonic = "FLOAT2FLOAT";
+      mnemonic = "FLOAT_NAN";
+      mnemonic = "FLOAT_EQUAL";
+      mnemonic = "FLOAT_LESSEQUAL";
+      mnemonic = "FLOAT_LESS";
+      mnemonic = "SUBPIECE";
+      mnemonic = "PIECE";
+      mnemonic = "POPCOUNT" ),
+    PCODE_OUTPUT(i, v_to),
+    PCODE_INPUT(i, _, v_from).
+
+CInsn_Move(i, v_to, "", v_from, "") :-
+    PCODE_MNEMONIC(i, mnemonic),
+    mnemonic = "INDIRECT",
+    PCODE_OUTPUT(i, v_to),
+    // Only uses arg 0 because INDIRECT arg 1 isn't a relevant data reference
+    // in general
+    PCODE_INPUT(i, 0, v_from).
+
+CInsn_Move(i, to, "", from, from_ap) :-
+    FieldAccess(i, from, from_ap, _),
+    PCODE_OUTPUT(i, to).
+
+.decl AllInputsConst(i: PCodeInstruction)
+
+AllInputsConst(i) :-
+    InputsConstUpTo(i, n),
+    !PCODE_INPUT(i, n+1, _).
+
+.decl InputsConstUpTo(i: PCodeInstruction, n: number)
+
+InputsConstUpTo(i, 0) :-
+    PCODE_INPUT(i, 0, in),
+    isConstVarnode(in).
+
+InputsConstUpTo(i, n+1) :-
+    InputsConstUpTo(i, n),
+    PCODE_INPUT(i, n+1, in),
+    isConstVarnode(in).
+
+
+CisAlloc(vn, "", func) :-
+    FuncPtr(vn, func).
+
+CisAlloc(v_from, "", hfunc_id),
+CInsn_Move(i, v_to, "", v_from, ""),
+AssignFuncPtrInstruction(i, v_from, hfunc_id) :-
+    PCODE_MNEMONIC(i, "PTRSUB"),
+    PCODE_INPUT(i, 0, zero),
+    isConstVarnode(zero),
+    VNODE_OFFSET_N(zero, 0),
+    PCODE_INPUT(i, 1, v_from),
+    FuncPtr(v_from, hfunc_id),
+    PCODE_OUTPUT(i, v_to).
+
+
+// ---------------------------------------------------------------------------
+// support
+
+
+
+.decl PCODE_INDEX_IN_BB(bbid: PCodeBlockBasic, i: PCodeInstruction, n: number)
+
+// number the instructions from first (0) to end
+
+PCODE_INDEX_IN_BB(bb, i, 0) :-
+    BB_FIRST(bb, i).
+PCODE_INDEX_IN_BB(bb, next, n+1) :-
+    PCODE_INDEX_IN_BB(bb, prev, n),
+    PCODE_NEXT(prev, next).
+
+CallInstruction(i, func_op) :-
+    (PCODE_MNEMONIC(i, "CALL"); PCODE_MNEMONIC(i, "CALLIND")),
+    PCODE_INPUT(i, 0, func_op).
+
+FuncPtr(vn_func, func) :-
+    isConstVarnode(vn_func),
+    VNODE_OFFSET_N(vn_func, addr),
+    HFUNC_EP(func, ep),
+    HFUNC_LOCAL_EP(ep, addr).
+
+.decl PointerArith(vn: PCodeVarnode)
+
+#define isArithMnemonic(m) \
+    ( m = "INT_ADD"; \
+      m = "INT_AND"; \
+      m = "INT_SRIGHT"; \
+      m = "FLOAT_ADD"; \
+      m = "FLOAT_DIV"; \
+      m = "FLOAT_MULT"; \
+      m = "FLOAT_SUB"; \
+      m = "INT_RIGHT"; \
+      m = "INT_MULT"; \
+      m = "INT_OR"; \
+      m = "INT_SDIV"; \
+      m = "INT_LEFT"; \
+      m = "INT_SREM"; \
+      m = "INT_SUB"; \
+      m = "INT_DIV"; \
+      m = "INT_REM"; \
+      m = "INT_XOR"; \
+      m = "INT_CARRY"; \
+      m = "INT_SCARRY"; \
+      m = "INT_SBORROW"; \
+      m = "BOOL_AND"; \
+      m = "BOOL_OR"; \
+      m = "BOOL_XOR"; \
+      m = "TRUNC"; \
+      m = "INT_SEXT"; \
+      m = "INT_ZEXT"; \
+      m = "INT_NEGATE"; \
+      m = "BOOL_NEGATE"; \
+      m = "FLOAT_NEG"; \
+      m = "FLOAT_ABS"; \
+      m = "FLOAT_SQRT"; \
+      m = "FLOAT_CEIL"; \
+      m = "FLOAT_FLOOR"; \
+      m = "FLOAT_ROUND"; \
+      m = "FLOAT2FLOAT"; \
+      m = "FLOAT_NAN" )
+
+PointerArith(vn) :-
+    PCODE_OUTPUT(i, vn),
+    PCODE_MNEMONIC(i, mnemonic),
+    isArithMnemonic(mnemonic),
+    PCODE_INPUT(i, _, in),
+    !isConstVarnode(in).
+
+PointerArith(vn) :-
+    PCODE_OUTPUT(i, vn),
+    PCODE_MNEMONIC(i, mnemonic),
+    mnemonic = "PTRADD",
+    (   PCODE_INPUT(i, 1, index), !isConstVarnode(index);
+        PCODE_INPUT(i, 2, size), !isConstVarnode(size)).
+
+PointerArith(out) :-
+    PointerArith(in),
+    PCODE_INPUT(i, _, in),
+    MaybeCastCopy(out, in),
+    PCODE_OUTPUT(i, out).
+
+CSourceInfo_Location(i, 1, region_id),
+CSourceInfo_Address(region_id),
+CAddress_AbsoluteAddress(region_id, target),
+CAddress_FullyQualifiedName(region_id, i),
+CAddress_Kind(region_id, "instruction") :-
+    PCODE_TARGET(i, target),
+    region_id = ord(i).
+
+CSourceInfo_Location(vn, 1, region_id),
+CSourceInfo_Address(region_id),
+CAddress_AbsoluteAddress(region_id, address),
+CAddress_FullyQualifiedName(region_id, vn),
+CAddress_Kind(region_id, "data") :-
+    (CVar_InFunction(vn, _); CVar_isGlobal(vn)),
+    // It appears that the pc address can be missing if Ghidra doesn't know the
+    // calling convention
+    VNODE_PC_ADDRESS(vn, address),
+    region_id = ord(vn).
+
+// same as above but gets name
+CAddress_Name(region_id, name) :-
+    (CVar_InFunction(vn, _); CVar_isGlobal(vn)),
+    VNODE_PC_ADDRESS(vn, address),
+    VNODE_HVAR(vn, hv),
+    HVAR_NAME(hv, name),
+    region_id = ord(vn).
+
+CSourceInfo_Location(f, 1, region_id),
+CSourceInfo_Address(region_id),
+CAddress_AbsoluteAddress(region_id, address),
+CAddress_FullyQualifiedName(region_id, f),
+CAddress_Kind(region_id, "function") :-
+    HFUNC_EP(f, ep),
+    (HFUNC_LOCAL_EP(ep, address); !HFUNC_LOCAL_EP(ep, _), address = ep),
+    region_id = ord(f).
+
+CAddress_Name(region_id, name) :-
+    HFUNC_EP(f, ep),
+    HFUNC_NAME(f, name),
+    region_id = ord(f).
+
+// Varnode that isn't const
+.decl Vn(vn: PCodeVarnode)
+
+Vn(vn) :-
+    VNODE_SPACE(vn, sp),
+    sp != "const".
+
+#include "vtable.dl"
+
+#ifdef ALL_OUTPUTS
+.output CastLoadSubpiece(CTADL_OUTPUT_DB_IO)
+.output FuncPtr(CTADL_OUTPUT_DB_IO)
+.output AssignFuncPtrInstruction(CTADL_OUTPUT_DB_IO)
+.output Load(CTADL_OUTPUT_DB_IO)
+.output Store(CTADL_OUTPUT_DB_IO)
+.output GEP(CTADL_OUTPUT_DB_IO)
+.output VarnodeType_Ghidra(CTADL_OUTPUT_DB_IO)
+.output PointerArith(CTADL_OUTPUT_DB_IO)
+.output DereferenceType(CTADL_OUTPUT_DB_IO)
+.output GEPInsn_isNested(CTADL_OUTPUT_DB_IO)
+.output isSourceVarnode(CTADL_OUTPUT_DB_IO)
+.output DirectCopy(CTADL_OUTPUT_DB_IO)
+.output MaybeCastCopy(CTADL_OUTPUT_DB_IO)
+.output isExternallyDefinedVarnode(CTADL_OUTPUT_DB_IO)
+.output PartialFuncSignature(CTADL_OUTPUT_DB_IO)
+#endif
+
+#if 0
+// comment this in if you want to figure out which cases aren't currently supported
+CTADLError(msg) :-
+    (
+      PCODE_MNEMONIC(i, "PTRSUB"),
+        PCODE_INPUT(i, 1, vn_offset),
+        isConstVarnode(vn_offset);
+      PCODE_MNEMONIC(i, "PTRADD"),
+        PCODE_INPUT(i, 1, index_vn),
+        isConstVarnode(index_vn),
+        PCODE_INPUT(i, 2, size_vn),
+        isConstVarnode(size_vn)
+    ),
+    PCODE_INPUT(i, 0, ptr),
+    VarnodeType_Ghidra(ptr, ptr_type),
+    !contains("undefined", ptr_type),
+    !GEP(i, _, _, _),
+    msg = cat(i, ": PTRSUB/PTRADD of type ", ptr_type, " unhandled").
+#endif

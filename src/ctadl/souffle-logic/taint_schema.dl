@@ -1,0 +1,20 @@
+// Taint analysis outputs a set of reachable vertices and edges. Vertices
+// contain the bulk of the information, including a unique id. Edges are
+// defined on those ids.
+
+// This schema is included in a souffle component which produces forward and
+// backward slices. So in the database these tables have a forward_flow or
+// backward_flow prefix.
+
+// Note that the same vertex, when reached from forward vs when reached from
+// backward, may have two different ids.
+.decl ReachableVertex(
+    id: number,
+    v1: CVar, p1: CAccessPath, label: SliceLabelType, call_state: FS_ParenMatch, suspicion: number,
+    ctx: symbol
+)
+choice-domain (v1, p1, label, call_state, ctx)
+
+// An edge in the taint graph corresponds to an instruction. The 'kind'
+// argument is  either "move", "actual-to-formal", or "formal-to-actual."
+.decl ReachableEdge(vertex_to: number, vertex_from: number, insn: CInsn, kind: symbol)

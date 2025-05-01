@@ -1,0 +1,245 @@
+{
+  "model_generators": [
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "memcpy", "_memcpy"
+          ]
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(1).*", "output": "Argument(0).*" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "strcpy", "_strcpy"
+          ]
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(1).*", "output": "Argument(0).*" },
+          { "input": "Argument(1).*", "output": "Return.*" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "strncat", "_strncat"
+          ]
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(1).*", "output": "Argument(0).*" },
+          { "input": "Argument(2).*", "output": "Argument(0).*" },
+          { "input": "Argument(1).*", "output": "Return.*" },
+          { "input": "Argument(2).*", "output": "Return.*" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "strlcpy", "_strlcpy",
+            "strlcat", "_strlcat"
+          ]
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(1).*", "output": "Argument(0).*" },
+          { "input": "Argument(2).*", "output": "Argument(0).*" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "getc", "_getc",
+            "getc_unlocked", "_getc_unlocked"
+          ]
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(0).*", "output": "Return" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "atoi", "_atoi",
+            "atol", "_atol",
+            "atoll", "_atoll",
+            "fgetc", "_fgetc",
+            "strchr", "_strchr",
+            "strrchr", "_strrchr",
+            "tolower", "_tolower",
+            "toupper", "_toupper",
+            "strdup", "_strdup",
+            "strdupa", "_strdupa",
+            "wcsdup", "_wcsdup"
+          ]
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(0)", "output": "Return" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "fgets", "_fgets"
+          ]
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(0)", "output": "Return" },
+          { "input": "Argument(2)", "output": "Return" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "scanf", "_scanf",
+            "fscanf", "_fscanf"
+          ]
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(2)", "output": "Argument(0)" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "getdelim", "_getdelim"
+          ]
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(3)", "output": "Argument(0)" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [ "getline", "_getline" ]
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(2)", "output": "Argument(0)" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "getw", "_getw"
+          ]
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(0)", "output": "Return" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "pread", "_pread"
+          ]
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(0)", "output": "Argument(1)" },
+          { "input": "Argument(0)", "output": "Return" },
+          { "input": "Argument(0)", "output": "Argument(2)" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "read", "_read"
+          ]
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(0)", "output": "Argument(2)" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [ "pread", "_pread" ]
+        }
+      ],
+      "model": {
+        "propagation": [
+          { "input": "Argument(0)", "output": "Argument(2).*" }
+        ]
+      }
+    }
+  ]
+}

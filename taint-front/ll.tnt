@@ -1,0 +1,8 @@
+def A(p) {
+    x = p;
+    // while (x) {
+        t = x.next;
+        process(x);
+        x = t;
+    // }
+}

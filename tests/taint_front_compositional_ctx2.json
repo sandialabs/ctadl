@@ -1,0 +1,21 @@
+{
+  "VirtualAssign": {
+    "includes": [{
+      "insn": "Main/call/1",
+      "v1": "Main/second",
+      "v2": "Main/first"
+    }],
+    "excludes": [{
+      "insn": "Main/call/1",
+      "v1": "Main/third",
+      "v2": "Main/first"
+    }]
+  },
+  "VirtualAlloc": {
+    "includes": [{
+      "to": "Main/third",
+      "to_path": "",
+      "obj": "allocsite"
+    }]
+  }
+}

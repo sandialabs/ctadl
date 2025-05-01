@@ -1,0 +1,18 @@
+// this example uses the star summary rule
+
+// SummaryFlow: p1.g.h <- p2
+def A(p1, p2) {
+    p1.g.h = p2;
+}
+
+// SummaryFlow: p1.d <- p2.g.h
+def C(p1, p2) {
+  p1.d = p2.g.h;
+}
+
+// SummaryFlow: p1.f.* <- p2
+// SummaryFlow: p1.d <- p2.f.*
+def B(p1, p2) {
+    A(p1.f, p2);
+    C(p1, p2.f);
+}

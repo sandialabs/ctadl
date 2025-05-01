@@ -1,0 +1,232 @@
+Connecting Dataflow through Intents
+-----------------------------------
+
+This is a log of my thoughts and plans for dealing with Intents.
+
+Some background:
+- Distilled from https://developer.android.com/training/basics/intents
+- Intents are objects in Android apps that can be passed between Activites or other apps that convey an "intent" to accomplish something, coupled with data. 
+-   Intents are used in lots of different ways in the Android API.
+-   Intents can be used to ask for generic things (like an Intent for 'set any alarm') or for hyper-specific things (like an Intent for 'start exactly Activity X from Application Y')
+-   Intents are usually 'fired' with a call to startActivity(Intent), or similar.
+-   The extra data is essentially an arbitrary String->value dictionary. You set data with "putExtra()", you get data with "get*Extra()" (like getStringExtra())
+-   The goal of our work here is to track data passed through Intents from where it is sent to where it is received.
+- Activities are one screen that is part of an Android app. When an app takes you to the "choose a file to open" screen, that is a new Activity. 
+-   A common way to structure an app is to have lots of different Activities in the same app, and switching between them is handled by firing off Intents.
+-   When you call startActivity(Intent), the OS will search for a corresponding Activity that can fulfill that Intent. It might have to choose between multiple.
+-   When it finds one, it will call onCreate(Bundle) for that Activity. Both Activities are "active" at this point, the startActivity() call doesn't 'wait.'
+-   During onCreate(Bundle), the receiver Activity can call getIntent() and get*Extra() to inspect the Intent and its related data.
+-   Sometimes you structure your Intents to only be fillable by another Activity in your app. In that mode, Intents are like an IPC mechanism between Activities.
+-   Sometimes you structure your Intents to be fillable by other apps. In that mode, Intents are like inter-app requests. We won't worry about this kind for now.
+-   The manifest for your app describes filters for what kinds of Intents your app can handle.
+- In summary: Act1:startActivity(intent) --> Act2:onCreate(bundle) in control flow, and we want data to flow from Act1:intent --> Act2:getIntent(); also Act1:putExtra() --> Act2:get*Extra()   
+-   You can also use startActivityWithResult(Intent) if you want to get a result back from the activity; e.g. if the activity is like choosing a file, and you want the filename sent back
+-   Act1:startActivityWithResult(intent) --> Act2:onCreate(bundle) --> Act2:setResult(code, resultIntent) --> Act2:finish() --> Act1:onActivityResult(code, resultIntent)
+-   You can also use yet another way, with registerForActivityResult(), activityResultContract(), activityResultCallback(), activityResultLauncher() [seem like wrappers around the previous]
+- There are also probably several other ways to pass Intents around and/or communicate between Activities, that I am not too worried about yet:
+-   Services, JobSchedulers
+-   SendBroadcast, SendOrderedBroadcast
+-   Fragments?
+
+
+Experiment 1:
+
+I ran a taint query with ActivityCommunication2, from source getExtra() to sink Log(); it output a Leak.
+I ran another taint query from putExtra() to sink Log(); it didn't output a Leak.
+This tells me ActivityCommunication2 is a good candidate for testing intent dataflow. When the dataflow works, both should output a Leak.
+
+Denis Meeting:
+
+Chatted with Denis about path forward for intents. Here's the takeaway plan:
+1. Check if manifest intent filter string appears anywhere in facts already... that would help with matching intents to their recipients
+2. Model getextra/putextra as field stores and loads for the intent
+3. Flow the intent itself from startActivity() to getIntent(); filtering down by intent-filters, if possible
+4. Lift statically defined keys to get sensitivity to different fields
+
+More Background Info:
+
+XMLNodeAttributes.facts and XMLNode.facts has info on intent filters
+- Might not matter, look for ANY match between intent arg and name string
+- Might need to look into how strings are represented in datalog facts? 
+Looked at real code (viber app), and it had many intents (more than 20?) and followed the same pattern I see in ActivityCommunication2  
+- I see some use of getBooleanExtra 
+- I see hasExtra 
+- I see explicit Intents (Context/class), implicit Intents (action string), empty intents where action is set later 
+BroadcastIntent, Context.startService, Context.bindService (other communciation mechanisms using intents)
+Intent constructors 
+- Intent() // empty 
+- Intent(string action) // this is the normal case, action matches intent filter 
+- Intent(string action, URI data) // where do we get data out? 
+- Intent(context ctx, class c) // explicitly choose the class to receive the intent 
+- Intent(string action, URI data, context ctx, class c) // explicitly choose the class to receive the intent 
+- URI data is retrieved through getData() 
+- Could also be SetComponent or SetClass for explicit intents 
+- Could also be setAction or addCategory for implicit intents 
+What do putExtra and getExtra actually do? 
+- They go through android.os.Bundle, into an ArrayMap 
+- If we can track dataflow through static keys of ArrayMaps, we might automatically get Intents 
+
+Experiment 2:
+
+Worked with Denis to write a rule that flows taint labels from any putExtra() call to any getExtra() call where the keys are equal. It worked!
+
+Need Examples: 
+- To verify key matching works 
+- To verify intent matching works 
+- Can I generate these examples myself? 
+ 
+Next Steps: 
+- Do we really want to model intents as fields? With ArrayMaps? Or is what we are doing now OK? 
+- Do other versions: 
+  - Implicit & explicit intents 
+  - get*Extra()  
+  - Activity results 
+  - Other ways of specifying intents 
+  - Broadcasts 
+  - Services 
+- What does pluggable external models mean? 
+ 
+DOOP treats intent sending (like putExtra()) as a taint sink, and intent receiving (like getExtra()) as a taint source. So it doesn't track the specific dataflow of intents, just treats intents like generic network send/recv. It also transfers taint to the intent itself when it gets a field added.  
+ 
+The most relevant (for us) files from DOOP are in:  
+  Doop/souffle-logic/main/android.dl 
+  Doop/souffle-logic/main/android-xml.dl
+
+
+Looking Over Intent Examples in Benchmarks:
+
+ActivityCommunication1-9:
+- I looked at 1 and 2. These look like they are all different ways for intra-app communication, but not all involve Intents
+- ActivityCommunication2 does use Intents
+- ActivityCommunication2 includes a duplicate Activity, with a different event filter, such that 
+- Should find one with startActivityWithResult()
+
+BroadcastTestAndTaint1: 
+- This uses broadcast receivers, including an intent being passed through a "receiver" method, with an extra "imei" field (should be sensitive data)
+- We should see a flow from getDeviceId() to Log(), going through the Intent/Broadcast system
+- Broadcasts seem less common, so this is a good test, but not a good "common case" on Intents
+
+ServiceCommunication1: 
+- Example of creating a 'Service' to handle messages, uses an Intent, but doesn't seem like data flows through the intent
+
+IntentSource1, IntentSink1, and IntentSink2:
+- These are an example of inter-app Intent communications with leaking imei
+- Very good examples, but inter-app so not what we want
+
+*** ActivityCommunication2
+
+//OutFlowActivity sends the Intent through the startActivity() call
+public class edu.mit.icc_action_string_operations.OutFlowActivity extends android.app.Activity
+{
+
+    ...
+
+    protected void onCreate(android.os.Bundle)
+    {
+        android.content.Intent r2#_33;
+        java.lang.String $r5, $r6, $r6_$$A_1;
+
+        ...
+
+        $r5 = virtualinvoke r4#_31.<android.telephony.TelephonyManager: java.lang.String getDeviceId()>();
+        r2#_33 = new android.content.Intent;
+        $r6 = "ignore.edu.mit.icc_action_string_operations.ACTION";
+        $r6_$$A_1 = virtualinvoke $r6.<java.lang.String: java.lang.String substring(int)>(7);
+        specialinvoke r2#_33.<android.content.Intent: void <init>(java.lang.String)>($r6_$$A_1);
+        virtualinvoke r2#_33.<android.content.Intent: android.content.Intent putExtra(java.lang.String,java.lang.String)>("DroidBench", $r5);
+        virtualinvoke r0#_0.<edu.mit.icc_action_string_operations.OutFlowActivity: void startActivity(android.content.Intent)>(r2#_33);
+
+        return;
+    }
+}
+
+
+// The InFlowActivity class receives the Intent data and puts it in Log
+public class edu.mit.icc_action_string_operations.InFlowActivity extends android.app.Activity
+{
+
+    ...
+
+    protected void onCreate(android.os.Bundle)
+    {
+        android.content.Intent $r2;
+        java.lang.String $r3;
+
+        ...
+
+        $r2 = virtualinvoke r0#_0.<edu.mit.icc_action_string_operations.InFlowActivity: android.content.Intent getIntent()>();
+        $r3 = virtualinvoke $r2.<android.content.Intent: java.lang.String getStringExtra(java.lang.String)>("DroidBench");
+        staticinvoke <android.util.Log: int i(java.lang.String,java.lang.String)>("DroidBench", $r3);
+
+        return;
+    }
+}
+
+
+*** BroadcastTestAndTaint1 Example Code
+
+// BroadcastTest class creates the receiver and sends an intent to it
+public class edu.mit.icc_broadcast_programmatic_intentfilter.BroadcastTest extends android.app.Activity
+{
+    ...
+
+    // registerReceiver() call registers a new object that can receive broadcasts
+    public void onCreate(android.os.Bundle)
+    {
+	...
+        virtualinvoke r0#_0.<edu.mit.icc_broadcast_programmatic_intentfilter.BroadcastTest: android.content.Intent registerReceiver(android.content.BroadcastReceiver,android.conten\
+t.IntentFilter)>(r2#_29, $r3);
+	return;
+    }
+
+    // new Intent() and putExtra() calls generate an intent
+    // sendBroadcast() broadcasts it to every receiver (including the one registered earlier)
+    public void onDestroy()
+    {
+        edu.mit.icc_broadcast_programmatic_intentfilter.BroadcastTest r0#_0;
+        android.content.Intent r1#_46;
+        java.lang.Object $r2;
+        android.telephony.TelephonyManager r3#_43;
+        java.lang.String $r4, $r5;
+
+        r0#_0 := @this: edu.mit.icc_broadcast_programmatic_intentfilter.BroadcastTest;
+        $r2 = virtualinvoke r0#_0.<edu.mit.icc_broadcast_programmatic_intentfilter.BroadcastTest: java.lang.Object getSystemService(java.lang.String)>("phone");
+        r3#_43 = (android.telephony.TelephonyManager) $r2;
+        $r4 = virtualinvoke r3#_43.<android.telephony.TelephonyManager: java.lang.String getDeviceId()>();
+        r1#_46 = new android.content.Intent;
+        $r5 = <edu.mit.icc_broadcast_programmatic_intentfilter.BroadcastTest: java.lang.String ACTION>;
+        specialinvoke r1#_46.<android.content.Intent: void <init>(java.lang.String)>($r5);
+        virtualinvoke r1#_46.<android.content.Intent: android.content.Intent putExtra(java.lang.String,java.lang.String)>("imei", $r4);
+        virtualinvoke r0#_0.<edu.mit.icc_broadcast_programmatic_intentfilter.BroadcastTest: void sendBroadcast(android.content.Intent)>(r1#_46);
+
+        return;
+    }
+}
+
+
+// This is the receiver implementation
+class edu.mit.icc_broadcast_programmatic_intentfilter.BroadcastTest$1 extends android.content.BroadcastReceiver
+{
+    ...
+
+    // getStringExtra() pulls information from the broadcasted intent
+    public void onReceive(android.content.Context, android.content.Intent)
+    {
+        android.content.Intent $r2;
+        java.lang.String $r3;
+
+	...
+
+        $r2 := @parameter1: android.content.Intent;
+        $r3 = virtualinvoke $r2.<android.content.Intent: java.lang.String getStringExtra(java.lang.String)>("imei");
+        if $r3 == null goto label1;
+        staticinvoke <android.util.Log: int i(java.lang.String,java.lang.String)>("DroidBench", $r3);
+
+     label1:
+        return;
+    }
+}
+
+
+
+

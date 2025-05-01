@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+
+set -e
+set -o pipefail
+set -x
+
+SCRIPT_DIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+PATH="$SCRIPT_DIR:$PATH"
+
+
+top="$(git rev-parse --show-toplevel)"
+outdir="$top/ctadl-test-output"
+mkdir -p $outdir
+
+bash $top/tests/bin/check-static
+
+cd $outdir
+
+bash $top/tests/bin/check-taintfront
+
+bash $top/tests/bin/check-ActivityCommunication4
+
+bash $top/tests/bin/check-pcode
+
+bash $top/tests/bin/check-analysis-options
+
+# Checks the sarif logs for validation failures
+jq '.runs[].results[] | select(.ruleId | test("JSON.*"))' sarif-validation-log.sarif > sarif-validation-failures.txt
+if [ -s "sarif-validation-failures.txt" ]; then
+  exit 1
+fi
+
+echo "all tests passed"

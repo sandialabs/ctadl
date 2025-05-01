@@ -1,0 +1,31 @@
+#pragma once
+
+#include "ctadl_ir_types.dl"
+
+// ---------------------------------------------------------------------------
+// inputs
+
+// tags a vertex as a source
+.decl TaintSourceVertex(tag: SliceLabelType, v: CVar, p: CAccessPath)
+// report a leak if taint reaches the vertex
+.decl LeakingSinkVertex(tag: SliceLabelType, v: CVar, p: CAccessPath)
+// if v.p tainted with tag, don't let data flow out
+.decl TaintSanitizeVertex(tag: SliceLabelType, v: CVar, p: CAccessPath)
+// if v2.p2 is tainted with tag, don't let data flow on edge
+.decl TaintSanitizeEdge(tag: SliceLabelType, v1: CVar, p1: CAccessPath, v2: CVar, p2: CAccessPath)
+
+// prefer to use AllEdge and AllVertex as it gives the most consistent results for users
+
+// if v2.p2 is tainted, don't let data flow on edge
+.decl TaintSanitizeAllEdge(v1: CVar, p1: CAccessPath, v2: CVar, p2: CAccessPath)
+// if v.p tainted, don't let any data flows out
+.decl TaintSanitizeAllVertex(v: CVar, p: CAccessPath)
+
+// ---------------------------------------------------------------------------
+// outputs
+
+// primary outputs are "forward_flow.ReachableVertex",
+// "forward_flow.ReachableEdge" and the backward_flow version of each
+
+// call to unmodeled function with tainted argument
+.decl isTaintedArgUnmodeled(tag: SliceLabelType, function: CFunction, index: number, ap: CAccessPath, direction: symbol)

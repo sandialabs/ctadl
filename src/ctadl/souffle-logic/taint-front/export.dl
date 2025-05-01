@@ -1,0 +1,11 @@
+.output IndirectCallStmt(CTADL_OUTPUT_DB_IO)
+.output Function(CTADL_OUTPUT_DB_IO)
+.output Global(CTADL_OUTPUT_DB_IO)
+.output FormalParam(CTADL_OUTPUT_DB_IO)
+.output ActualParam(CTADL_OUTPUT_DB_IO)
+.output Assign(CTADL_OUTPUT_DB_IO)
+.output AssignFunction(CTADL_OUTPUT_DB_IO)
+.output DirectCall(CTADL_OUTPUT_DB_IO)
+.output IndirectCall(CTADL_OUTPUT_DB_IO)
+.output TaintSpec(CTADL_OUTPUT_DB_IO)
+

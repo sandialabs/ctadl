@@ -1,0 +1,63 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 6f2090f..6963746 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -340,58 +340,3 @@ function(get_linux_lsb_release_information)
+     set(LSB_RELEASE_VERSION_SHORT "${LSB_RELEASE_VERSION_SHORT}" PARENT_SCOPE)
+     set(LSB_RELEASE_CODENAME_SHORT "${LSB_RELEASE_CODENAME_SHORT}" PARENT_SCOPE)
+ endfunction()
+-
+-# --------------------------------------------------
+-# CPack configuration
+-# --------------------------------------------------
+-
+-SET(CPACK_PACKAGE_CONTACT "Patrick H.")
+-SET(CPACK_PACKAGE_DESCRIPTION "Souffle - A Datalog Compiler")
+-SET(CPACK_PACKAGE_DESCRIPTION_SUMMARY "A Datalog Compiler")
+-
+-# Use all available threads (primarily for compression of files)
+-SET(CPACK_THREADS 0)
+-
+-# Make sure changelog, bash-completion and other important files in debian directory also packaged
+-SET(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${CMAKE_SOURCE_DIR}/debian/changelog.in" "${CMAKE_SOURCE_DIR}/debian/souffle.bash-completion" "${CMAKE_SOURCE_DIR}/debian/copyright")
+-
+-# --------------------------------------------------
+-# CPack configuration for Linux
+-# --------------------------------------------------
+-if (CMAKE_SYSTEM_NAME MATCHES "Linux")
+-	get_linux_lsb_release_information()
+-    if (LSB_RELEASE_ID_SHORT MATCHES "Ubuntu")
+-		# Generate just DEB
+-		SET(CPACK_GENERATOR "DEB")
+-		# --------------------------------------------------
+-		# Variables relevent to DEB packages
+-		# --------------------------------------------------
+-
+-		# Specifying runtime dependencies
+-		set(CPACK_DEBIAN_PACKAGE_DEPENDS "g++ (>= 7), libffi-dev, libncurses5-dev, libsqlite3-dev, mcpp, zlib1g-dev")
+-
+-		# Auto-generate any runtime dependencies that are required
+-		SET(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+-
+-		# Architectures are actually auto-detected so no need to set this variable
+-		# SET(CPACK_DEBIAN_PACKAGE_ARCHITECTURE "i386")
+-	endif()
+-
+-    if (LSB_RELEASE_ID_SHORT MATCHES "Fedora")
+-		# Generate both DEB and RPM packages
+-		SET(CPACK_GENERATOR "RPM")
+-
+-		# --------------------------------------------------
+-		# Variables relevent to RPM packages
+-		# --------------------------------------------------
+-
+-		# Specifying runtime dependencies
+-		set(CPACK_RPM_PACKAGE_REQUIRES "g++ >= 7, libffi, libffi-devel, ncurses-devel, libsqlite3x, mcpp, zlib-devel")
+-
+-		# Don't auto-detect dependencies and provides
+-		SET(CPACK_RPM_PACKAGE_AUTOREQPROV "no")
+-	endif()
+-endif()
+-
+-
+-INCLUDE(CPack)

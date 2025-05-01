@@ -1,0 +1,106 @@
+// This forward slice is really just half a slice -- it's the part that follows
+// "call" edges, i.e., forward from callers to callees. It's intended to be
+// used whenever some other rules have already computed summaries and we just
+// want to push the summaries forward in execution.
+
+// ---------------------------------------------------------------------------
+// macros for overriding
+
+// by default, we assume that VirtualAssign is recursive. So the default plan
+// will prioritize it for deltas.
+#ifndef FS_VirtualAssignPlan
+#define FS_VirtualAssignPlan .plan 1: (2, 1)
+#endif
+
+#ifndef FS_ICPlan
+#define FS_ICPlan .plan 1: (4, 2, 1, 3)
+#endif
+
+#ifndef FS_CallFlowEdgePlan
+#define FS_CallFlowEdgePlan .plan 1: (2, 1, 3, 4)
+#endif
+
+.comp SliceCallee {
+
+// ---------------------------------------------------------------------------
+// inputs
+
+.comp Input {
+    // computes flows from root vertex
+    .decl StartVertex(v: CVar, p: CAccessPath, label: SliceLabelType) inline
+}
+
+.init input_ = Input
+
+// ---------------------------------------------------------------------------
+// outputs
+
+.decl isReachable(v: CVar, p: CAccessPath, label: SliceLabelType) inline
+isReachable(v, p, label) :- ReachableVertex(_, v, p, label).
+
+.decl ReachableVertex(
+    id: number,
+    v1: CVar, p1: CAccessPath, label: SliceLabelType
+)
+choice-domain (v1, p1, label)
+
+#define ReachableVertexId(v, p, label) \
+    ord(cat(v, ":", p, ":", label))
+
+// start vertex is reachable
+Vertex(v, p),
+ReachableVertex(ReachableVertexId(v, p, label), v, p, label) :-
+    input_.StartVertex(v, p, label).
+
+// reachable across intraprocedural edge
+ReachableVertex(vertex_to, v1, p1, tag) :-
+    ReachableVertex(_, v2, p2, tag),
+    VirtualAssign(_, v1, p1, v2, p2, _, _),
+    vertex_to = ReachableVertexId(v1, p1, tag).
+FS_VirtualAssignPlan
+
+// reachable across call
+ReachableVertex(vertex_to, v_to, p_to, label) :-
+    ReachableVertex(_, v_from, p_from, label),
+    CallFlowEdge(_, v_to, p_to, v_from, p_from),
+    vertex_to = ReachableVertexId(v_to, p_to, label).
+.plan 1: (2, 1)
+
+// ---------------------------------------------------------------------------
+// support
+
+// an edge between the vertices of caller and callee, created because at least
+// one vertex is tainted
+.decl CallFlowEdge(
+    insn: CInsn, v_callee: CVar, p_callee: CAccessPath, v_caller: CVar, p_caller: CAccessPath
+)
+// call arg n.<something> ++ <p> tainted, potential call flow
+.decl IC(call: CInsn, n: number, p: CAccessPath)
+
+// call is tainted because caller actual is tainted
+// the suffix p2 of the n'th actual is tainted
+IC(call, n, p2) :-
+    ReachableVertex(_, v, p12, _label),
+    CCall_ActualParam(call, n, v, p1),
+    MatchComputedPrefix(p12, p1, p2),
+    CallEdge(call, _id, "").
+FS_ICPlan
+
+// propagate vertex to callee because this increases precision for tainted things.
+Vertex(v_callee, p2),
+// call flow edge enabled by reachable(actual_param)
+// this concatenation is safe because the precondition of IC is that p2 is the tainted suffix of p1
+CallFlowEdge(call, v_callee, p2, v_caller, cat(p1, p2)) :-
+    // the path p12 of the n'th actual is tainted
+    IC(call, n, p2),
+    CCall_ActualParam(call, n, v_caller, p1),
+    CallEdge(call, id, ""),
+    CFunction_FormalParam(id, n, v_callee).
+FS_CallFlowEdgePlan
+
+#ifdef ALL_OUTPUTS
+.output IC(CTADL_OUTPUT_DB_IO)
+.output CallFlowEdge(CTADL_OUTPUT_DB_IO)
+#endif
+
+}

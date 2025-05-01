@@ -1,0 +1,347 @@
+// Implements a generic taint query.
+// It imports the IR and the graph from the index and sets up a forward taint
+// slice. To actually do work, the including file needs to set up sources and
+// sinks.
+
+#define CTADL_IMPORT_IR_FROM_DB
+
+// import ir code from index
+#include <ctadl_schema.dl>
+#include <imports.dl>
+
+// import graph from index
+#include <graph/declarations.dl>
+#include <graph/access_path.dl>
+#include <graph/import.dl>
+
+CTADLStats("import-vertex", n) :- n = count : { Vertex(_, _) }.
+CTADLStats("import-virtual-assign", n) :- n = count : { VirtualAssign(_, _, _, _, _, _, _) }.
+CTADLStats("import-computed-access-path", n) :- n = count : { isComputedAccessPath(_) }.
+
+// these relations are used to estimate how many sources and sinks we have.
+// TaintSourceVertex and TaintSinkVertex are recursive because new nodes may be
+// created at analysis time (using existing assignments) and if "all_fields":
+// true is passed in the model generators, users can match on these vertices.
+.decl TaintSourceVertexNonRec(tag: SliceLabelType, v: CVar, p: CAccessPath)
+.decl LeakingSinkVertexNonRec(tag: SliceLabelType, v: CVar, p: CAccessPath)
+
+// the default forward slice plan assumes VirtualAssign has a delta relation.
+// here it doesn't, so obliterate the plan.
+#define FS_VirtualAssignPlan
+
+// model generator sources and sinks
+TaintSourceVertexNonRec(label, v, ap),
+TaintSourceVertex(label, v, ap) :-
+    MG_Endpoint(nodeid, "source", label),
+    MG_EndpointVertex(nodeid, param, is_star, ap, "false"),
+    MG_FuncEval(nodeid, fid),
+    (   is_star != 0, CFunction_FormalParam(fid, index, v), index >= 0, param=param
+    ;   is_star = 0, CFunction_FormalParam(fid, param, v)).
+
+LeakingSinkVertexNonRec(label, v, ap),
+LeakingSinkVertex(label, v, ap) :-
+    MG_Endpoint(nodeid, "sink", label),
+    MG_EndpointVertex(nodeid, param, is_star, ap, "false"),
+    MG_FuncEval(nodeid, fid),
+    (   is_star != 0, CFunction_FormalParam(fid, index, v), index >= 0, param=param
+    ;   is_star = 0, CFunction_FormalParam(fid, param, v)).
+
+TaintSourceVertexNonRec(label, v, ap) :-
+    MG_Endpoint(nodeid, "source", label),
+    MG_EndpointVertex(nodeid, param, is_star, _ap, "true"),
+    MG_FuncEval(nodeid, fid),
+    (   is_star != 0, CFunction_FormalParam(fid, index, v), index >= 0, param=param
+    ;   is_star = 0, CFunction_FormalParam(fid, param, v)),
+    Vertex(v, ap).
+
+TaintSourceVertex(label, v, ap) :-
+    MG_Endpoint(nodeid, "source", label),
+    MG_EndpointVertex(nodeid, param, is_star, _ap, "true"),
+    MG_FuncEval(nodeid, fid),
+    (   is_star != 0, CFunction_FormalParam(fid, index, v), index >= 0, param=param
+    ;   is_star = 0, CFunction_FormalParam(fid, param, v)),
+    (forward_flow.Vertex(v, ap); backward_flow.Vertex(v, ap)).
+
+LeakingSinkVertexNonRec(label, v, ap) :-
+    MG_Endpoint(nodeid, "sink", label),
+    MG_EndpointVertex(nodeid, param, is_star, _ap, "true"),
+    MG_FuncEval(nodeid, fid),
+    (   is_star != 0, CFunction_FormalParam(fid, index, v), index >= 0, param=param
+    ;   is_star = 0, CFunction_FormalParam(fid, param, v)),
+    Vertex(v, ap).
+
+LeakingSinkVertex(label, v, ap) :-
+    MG_Endpoint(nodeid, "sink", label),
+    MG_EndpointVertex(nodeid, param, is_star, _ap, "true"),
+    MG_FuncEval(nodeid, fid),
+    (   is_star != 0, CFunction_FormalParam(fid, index, v), index >= 0, param=param
+    ;   is_star = 0, CFunction_FormalParam(fid, param, v)),
+    (forward_flow.Vertex(v, ap); backward_flow.Vertex(v, ap)).
+
+TaintSourceVertexNonRec(label, vid, ap),
+TaintSourceVertex(label, vid, ap) :-
+    MG_Endpoint(nodeid, "source", label),
+    MG_EndpointVertex(nodeid, _, _is_star, ap, "false"),
+    MG_VarEval(nodeid, vid).
+
+LeakingSinkVertexNonRec(label, vid, ap),
+LeakingSinkVertex(label, vid, ap) :-
+    MG_Endpoint(nodeid, "sink", label),
+    MG_EndpointVertex(nodeid, _, _is_star, ap, "false"),
+    MG_VarEval(nodeid, vid).
+
+TaintSourceVertexNonRec(label, vid, ap) :-
+    MG_Endpoint(nodeid, "source", label),
+    MG_EndpointVertex(nodeid, _, _is_star, ap, "true"),
+    MG_VarEval(nodeid, vid),
+    Vertex(vid, ap).
+
+TaintSourceVertex(label, vid, ap) :-
+    MG_Endpoint(nodeid, "source", label),
+    MG_EndpointVertex(nodeid, _, _is_star, ap, "true"),
+    MG_VarEval(nodeid, vid),
+    (forward_flow.Vertex(vid, ap); backward_flow.Vertex(vid, ap)).
+
+LeakingSinkVertexNonRec(label, vid, ap) :-
+    MG_Endpoint(nodeid, "sink", label),
+    MG_EndpointVertex(nodeid, _, _is_star, ap, "true"),
+    MG_VarEval(nodeid, vid),
+    Vertex(vid, ap).
+
+LeakingSinkVertex(label, vid, ap) :-
+    MG_Endpoint(nodeid, "sink", label),
+    MG_EndpointVertex(nodeid, _, _is_star, ap, "true"),
+    MG_VarEval(nodeid, vid),
+    (forward_flow.Vertex(vid, ap); backward_flow.Vertex(vid, ap)).
+
+TaintSourceVertexNonRec(label, v, field),
+TaintSourceVertex(label, v, field) :-
+    MG_Endpoint(nodeid, "source", label),
+    MG_EndpointField(nodeid),
+    MG_FieldEval(nodeid, field),
+    (   VirtualAssign(_, v, field, _, _, _, _);
+        VirtualAssign(_, _, _, v, field, _, _)).
+
+TaintSourceVertexNonRec(label, v, p),
+TaintSourceVertex(label, v, p) :-
+    MG_Endpoint(nodeid, "source", label),
+    MG_EndpointInsn(nodeid),
+    MG_InsnEval(nodeid, i),
+    VirtualAssign(i, _, _, v, p, _, _).
+
+LeakingSinkVertexNonRec(label, v, field),
+LeakingSinkVertex(label, v, field) :-
+    MG_Endpoint(nodeid, "sink", label),
+    MG_EndpointField(nodeid),
+    MG_FieldEval(nodeid, field),
+    (   VirtualAssign(_, v, field, _, _, _, _);
+        VirtualAssign(_, _, _, v, field, _, _)).
+
+LeakingSinkVertexNonRec(label, v, p),
+LeakingSinkVertex(label, v, p) :-
+    MG_Endpoint(nodeid, "sink", label),
+    MG_EndpointInsn(nodeid),
+    MG_InsnEval(nodeid, i),
+    VirtualAssign(i, v, p, _, _, _, _).
+
+// catches derived field uses because we use VirtualAssign here
+//MG_InsnEval(nodeid, i) :-
+//    (   MG_UsesFieldName(nodeid, name), CField_Name(field, name)
+//    ;   MG_UsesFieldUnqualifiedId(nodeid, field)),
+//    (   VirtualAssign(i, _, field, _, _, _, _)
+//    ;   VirtualAssign(i, _, _, _, field, _, _)).
+//
+
+// Do NOT make Vertex inline because then the slice can't output to it.
+// This makes the slice VirtualAssign inline, meaning no copy is made.
+//#define FS_VirtualAssignInline inline
+// Not sure why we can't have this plan on some machines; remove this once
+// investigated
+#define SB_CallFlowEdgePlan
+
+
+// Use the older taint stuff for now because taint.dl is unscalable for some
+// reason.
+#include <graph/slice/bidi.dl>
+
+.init forward_flow = SliceTaint
+.init backward_flow = SliceTaint
+
+#define isFBReachable(v, p, label) ( \
+    forward_flow.isReachable(v, p, label); \
+    backward_flow.isReachable(v, p, label))
+        
+
+.decl isTaintLabel(label: symbol) inline
+isTaintLabel(label) :-
+    TaintSourceVertexNonRec(label, _, _);
+    LeakingSinkVertexNonRec(label, _, _).
+
+#include <information-flow/export.dl>
+
+
+// ---------------------------------------------------------------------------
+// user hint rules
+
+// assignment that loses taint
+// p13 is the ap that should be tainted on the lhs, but isn't
+.decl LostAssign(insn: CInsn, p13: CAccessPath, dir: symbol)
+choice-domain (insn)
+.output LostAssign(CTADL_OUTPUT_DB_IO)
+
+LostAssign(insn, p13, "dest") :-
+    forward_flow.isReachable(v2, p23, label),
+    VirtualAssign(insn, v1, p1, v2, p2, _reason, ""),
+    MatchComputedPrefix(p23, p2, p3),
+    !contains(STAR, p1),
+    p13 = cat(p1, p3),
+    !forward_flow.isReachable(v1, p13, label).
+LostAssign(insn, p23, "src") :-
+    backward_flow.isReachable(v1, p13, label),
+    VirtualAssign(insn, v1, p1, v2, p2, _reason, ""),
+    MatchComputedPrefix(p13, p1, p3),
+    !contains(STAR, p2),
+    p23 = cat(p2, p3),
+    !backward_flow.isReachable(v2, p23, label).
+
+//isFunctionModeled(f) :-  
+
+isTaintedArgUnmodeled(label, f, n, p13, "forward") :-
+    forward_flow.isReachable(v, p13, label),
+    CCall_ActualParam(call, n, v, p1),
+    MatchComputedPrefix(p13, p1, _p3),
+    CallEdge(call, f, _),
+    !CInsn_ModelAssign(call, _, _, _, _, _),
+    !TaintSourceVertex(label, v, p13),
+    !CInsn_InFunction(_, _, f),
+    !SummaryFlow(f, n, _, _, _, _, ""),
+    !SummaryFlow(_, _, _, f, n, _, "").
+
+isTaintedArgUnmodeled(label, f, n, p13, "backward") :-
+    backward_flow.isReachable(v, p13, label),
+    CCall_ActualParam(call, n, v, p1),
+    MatchComputedPrefix(p13, p1, _p3),
+    CallEdge(call, f, _),
+    !CInsn_ModelAssign(call, _, _, _, _, _),
+    !LeakingSinkVertex(label, v, p13),
+    !CInsn_InFunction(_, _, f),
+    !SummaryFlow(f, n, _, _, _, _, ""),
+    !SummaryFlow(_, _, _, f, n, _, "").
+
+
+// the idea for match star is:
+// MatchStar(star_ap, match_ap) :-
+//     contains(STAR, star_ap),
+//     match(star_ap, match_ap).
+// match_ap may or may not contain STAR.
+// But it turns into four rules below because of needing domains for
+// star_ap/match_ap and the source/sink rules.
+// MatchStar can be removed
+
+#if 0
+.decl MatchStar(star_ap: CAccessPath, match_ap: CAccessPath)
+// i think we don't want this. instead create data flow edges to star vertices
+// during indexing.
+// source/sink is the star ap
+MatchStar(star_ap, match_ap),
+TaintSourceVertex(label, v, match_ap) :-
+    TaintSourceVertex(label, v, star_ap),
+    contains(STAR, star_ap),
+    forward_flow.Vertex(v, match_ap),
+    match(star_ap, match_ap),
+    EnableStar().
+
+MatchStar(star_ap, match_ap),
+LeakingSinkVertex(label, v, match_ap) :-
+    LeakingSinkVertex(label, v, star_ap),
+    contains(STAR, star_ap),
+    forward_flow.Vertex(v, match_ap),
+    match(star_ap, match_ap),
+    EnableStar().
+
+// existing vertex is the star ap
+MatchStar(star_ap, match_ap),
+TaintSourceVertex(label, v, star_ap) :-
+    forward_flow.Vertex(v, star_ap),
+    contains(STAR, star_ap),
+    TaintSourceVertex(label, v, match_ap),
+    match(star_ap, match_ap),
+    EnableStar().
+
+MatchStar(star_ap, match_ap),
+LeakingSinkVertex(label, v, star_ap) :-
+    forward_flow.Vertex(v, star_ap),
+    contains(STAR, star_ap),
+    LeakingSinkVertex(label, v, match_ap),
+    match(star_ap, match_ap),
+    EnableStar().
+#endif
+
+// instantiates the taint flow
+
+.decl EnableForwardSlice()
+.decl EnableBackwardSlice()
+
+.decl TaintSourceOnlyVertex(v: CVar, p: CAccessPath)
+TaintSourceOnlyVertex(v, p) :- TaintSourceVertexNonRec(_, v, p).
+.decl LeakingSinkOnlyVertex(v: CVar, p: CAccessPath)
+LeakingSinkOnlyVertex(v, p) :- LeakingSinkVertexNonRec(_, v, p).
+.decl EndpointCounts(n_source: number, n_sink: number)
+EndpointCounts(n_source, n_sink) :-
+    n_source = count : { TaintSourceOnlyVertex(_, _) },
+    n_sink = count : { LeakingSinkOnlyVertex(_, _) }.
+
+EnableForwardSlice() :-
+    MG_SliceDirection("forward");
+    !MG_SliceDirection(_),
+    EndpointCounts(n_source, n_sink),
+    (   n_sink = 0
+    ;   n_source > 0, n_source <= n_sink).
+// !(n_sink=0 or (n_source > 0 and n_source <= n_sink))
+// ==
+// (n_sink!=0 and (n_source <= 0 or n_source > n_sink))
+EnableBackwardSlice() :-
+    MG_SliceDirection("backward");
+    !MG_SliceDirection(_),
+    EndpointCounts(n_source, n_sink),
+    (n_sink != 0, (n_source <= 0; n_source > n_sink)).
+
+// hook up graph to taint flow
+forward_flow.input_.SliceForward() :- EnableForwardSlice().
+forward_flow.input_.SliceBackward() :- false.
+forward_flow.input_.StartVertex(v, p, label) :- TaintSourceVertex(label, v, p), EnableForwardSlice().
+forward_flow.Vertex(v, p) :- Vertex(v, p), EnableForwardSlice().
+forward_flow.VirtualAssign(s, v1, p1, v2, p2, r, ctx) :- VirtualAssign(s, v1, p1, v2, p2, r, ctx), EnableForwardSlice().
+forward_flow.input_.SanitizeAssign(v1, p1, v2, p2, l) :- TaintSanitizeEdge(l, v1, p1, v2, p2), EnableForwardSlice().
+forward_flow.input_.SanitizeAssign(v1, p1, v2, p2, l) :- TaintSanitizeAllEdge(v1, p1, v2, p2), isTaintLabel(l), EnableForwardSlice().
+forward_flow.input_.SanitizeVertex(v, p, l) :- TaintSanitizeVertex(l, v, p), EnableForwardSlice().
+forward_flow.input_.SanitizeVertex(v, p, l) :- TaintSanitizeAllVertex(v, p), isTaintLabel(l), EnableForwardSlice().
+
+backward_flow.input_.SliceBackward() :- EnableBackwardSlice().
+backward_flow.input_.SliceForward() :- false.
+backward_flow.input_.StartVertex(v, p, label) :- LeakingSinkVertex(label, v, p), EnableBackwardSlice().
+backward_flow.Vertex(v, p) :- Vertex(v, p), EnableBackwardSlice().
+// flip virtualassign
+backward_flow.VirtualAssign(s, v2, p2, v1, p1, r, ctx) :- VirtualAssign(s, v1, p1, v2, p2, r, ctx), EnableBackwardSlice().
+// flip sanitizeassign
+backward_flow.input_.SanitizeAssign(v2, p2, v1, p1, l) :- TaintSanitizeEdge(l, v1, p1, v2, p2), EnableBackwardSlice().
+backward_flow.input_.SanitizeAssign(v2, p2, v1, p1, l) :- TaintSanitizeAllEdge(v1, p1, v2, p2), isTaintLabel(l), EnableBackwardSlice().
+backward_flow.input_.SanitizeVertex(v, p, l) :- TaintSanitizeVertex(l, v, p), EnableBackwardSlice().
+backward_flow.input_.SanitizeVertex(v, p, l) :- TaintSanitizeAllVertex(v, p), isTaintLabel(l), EnableBackwardSlice().
+
+// client customizes TaintSourceVertex, etc
+
+.decl isTainted(label: SliceLabelType, v: CVar, p: CAccessPath)
+// XXX distinguish direction of taintedness
+isTainted(label, v, p) :- forward_flow.isReachable(v, p, label).
+
+CTADLStats("source vertices", n) :- n = count : { TaintSourceVertex(_, _, _) }.
+CTADLStats("sink vertices", n) :- n = count : { LeakingSinkVertex(_, _, _) }.
+CTADLStats("tainted-vertex", n) :- n = count : { isTainted(_, _, _) }.
+
+#ifdef ALL_OUTPUTS
+.decl SliceDirectionOutput(direction: symbol)
+SliceDirectionOutput("forward") :- EnableForwardSlice().
+SliceDirectionOutput("backward") :- EnableBackwardSlice().
+.output SliceDirectionOutput(CTADL_OUTPUT_DB_IO)
+#endif

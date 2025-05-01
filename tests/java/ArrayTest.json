@@ -1,0 +1,41 @@
+{
+  "model_generators": [
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "name": "Foo",
+          "parent": "Ldefpackage/ArrayTest;"
+        }
+      ],
+      "model": {
+        "sources": [
+          {
+            "kind": "Label",
+            "port": "Argument(0)"
+          }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "name": "Bar",
+          "parent": "Ldefpackage/ArrayTest;"
+        }
+      ],
+      "model": {
+        "sinks": [
+          {
+            "kind": "Label",
+            "port": "Argument(0)",
+            "all_fields": true
+          }
+        ]
+      }
+    }
+  ]
+}

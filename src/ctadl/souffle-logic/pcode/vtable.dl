@@ -1,0 +1,39 @@
+// the constructor stores a vtable, one pattern:
+// tmp = PTRSUB 0, vtable
+// STORE spid, <loc>, tmp
+//
+// we turn this into allocs:
+// <loc>[0] -> func
+// <loc>[1] -> func
+// ...
+// for each offset in the vtable pointing to a func
+
+// instruction that gets a pointer to vtable
+.decl AssignVTableInstruction(i: PCodeInstruction, vtable_address: PCodeAddress)
+.output AssignVTableInstruction(CTADL_OUTPUT_DB_IO)
+
+AssignVTableInstruction(i, vtable_address) :-
+    PCODE_MNEMONIC(i, "PTRSUB"),
+    PCODE_INPUT(i, 0, zero),
+    isConstVarnode(zero),
+    VNODE_OFFSET_N(zero, 0),
+    PCODE_INPUT(i, 1, v_from),
+    VNODE_OFFSET_N(v_from, vtable_address),
+    VTABLE(_, vtable_address, _, _).
+
+
+// create allocs for individual vtable functions
+CisAccessPath(ap1),
+CisAlloc(var, ap1, func) :-
+    AssignVTableInstruction(i0, vtable),
+    PCODE_OUTPUT(i0, dst),
+    (MaybeCastCopy(dst_copy, dst); dst_copy = dst),
+    PCODE_INPUT(i1, 2, dst_copy),
+    Store(i1, var, ap0),
+    VTABLE(_, vtable, offset, func_address),
+    // filters invalid vtable entries
+    HFUNC_EP(func, func_address),
+    ap1 = cat(ap0, "[", to_string(offset), "]").
+
+
+// the indirect call is the "CALLIND" op

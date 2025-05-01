@@ -1,0 +1,165 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Properties>
+  <Properties Key="CoreSettings.Options">
+    <!--A guid that will be persisted to the 'Run.AutomationDetails.Guid' property. See section '3.17.4' of the SARIF specification for more information.-->
+    <Property Key="AutomationGuid" Value="00000000-0000-0000-0000-000000000000" Type="System.Guid" />
+    <!--An id that will be persisted to the 'Run.AutomationDetails.Id' property. See section '3.17.3' of the SARIF specification for more information.-->
+    <Property Key="AutomationId" Value="" />
+    <!--The path to a SARIF baseline file.-->
+    <Property Key="BaselineFilePath" Value="" />
+    <!--The capacity of the channels for analyzing scan targets and logging results.-->
+    <Property Key="ChannelSize" Value="50000" Type="System.Int32" />
+    <!--Optionally present data that should be inserted into log output. Valid values include. Hashes, TextFiles, BinaryFiles, EnvironmentVariables, RegionSnippets, ContextRegionSnippets, Guids, VersionControlDetails, and NondeterministicProperties.-->
+    <Property Key="DataToInsert" Value="None" Type="OptionallyEmittedData" />
+    <!--Optionally present data that should be removed from log output, e.g., NondeterminsticProperties.-->
+    <Property Key="DataToRemove" Value="None" Type="OptionallyEmittedData" />
+    <!--
+    A buffer size, in megabytes, passed to the events trace session instance when '- -etw is enabled.-->
+    <Property Key="EventsBufferSizeInMegabytes" Value="512" Type="System.Int32" />
+    <!--The path to which ETW events raised by analysis should be saved.-->
+    <Property Key="EventsFilePath" Value="" />
+    <!--One or more failure levels to persist to loggers. Valid values include Error, Warning, and Informational. Defaults to 'Error' and 'Warning'.-->
+    <Property Key="FailureLevels" Type="FailureLevelSet">
+      <Item>Warning</Item>
+      <Item>Error</Item>
+    </Property>
+    <!--An optional regex that can be used to filter unwanted files or directories from analysis, e.g.: (?i)\.(?:bmp|dll|exe|gif|jpe?g|lock|pack|png|psd|tar\.gz|tiff?|ttf|xcf|zip)$-->
+    <Property Key="GlobalFilePathDenyRegex" Value="" />
+    <!--
+    Scan targets that fall below this size threshold (in kilobytes) will not be analyzed.
+    It is legal to set this value to 0 (in order to potentially complete an analysis that
+    records what scan targets would have been analyzed, given current configuration.
+    Negative values will be discarded in favor of the default of 1024 KB.-->
+    <Property Key="MaxFileSizeInKilobytes" Value="1024" Type="System.Int64" />
+    <!--The path to write all resolved configuration (by current command-line) to.-->
+    <Property Key="OutputConfigurationFilePath" Value="" />
+    <!--Configures one or more file output options. Valid values include PrettyPrint, Minify, Inline, and Optimize. Pretty-printed output is the default. When Inline is specified, output will be written to relevant input files rather than generating a new log. Optimize indicates that all duplicative information in the log should be removed, minimizing size.-->
+    <Property Key="OutputFileOptions" Value="PrettyPrint" Type="FilePersistenceOptions" />
+    <!--The path to write all SARIF log file results to.-->
+    <Property Key="OutputFilePath" Value="" />
+    <!--Path to plugin(s) that should drive analysis for all configured scan targets.-->
+    <Property Key="PluginFilePaths" Type="StringSet" />
+    <!--A SARIF-accepting endpoint to publish the output log to.-->
+    <Property Key="PostUri" Value="" />
+    <!--Specifies whether to recurse into child directories when enumerating scan targets. Defaults to 'False'.-->
+    <Property Key="Recurse" Value="False" Type="System.Boolean" />
+    <!--One or more result kinds to persist to loggers. Valid values include None, NotApplicable, Pass, Fail, Review, Open, Informational. Defaults to 'Fail'.-->
+    <Property Key="ResultKinds" Type="ResultKindSet">
+      <Item>Fail</Item>
+    </Property>
+    <!--Emit a 'rich' return code consisting of a bitfield of conditions (as opposed to 0 or 1 indicating success or failure.-->
+    <Property Key="RichReturnCode" Value="False" Type="System.Boolean" />
+    <!--One or more file specifiers for locating scan targets.-->
+    <Property Key="TargetFileSpecifiers" Type="StringSet" />
+    <!--Count of threads to use in any parallel execution context. Defaults to '1' when the debugger is attached, otherwise is set to the environment processor count. Negative values are interpreted as '1'.-->
+    <Property Key="Threads" Value="24" Type="System.Int32" />
+    <!--A timeout value expressed in milliseconds. Default value is 2^31 ms (~25 days).Any negative value set is interpreted as '0' (i.e., timeout immediately).-->
+    <Property Key="TimeoutInMilliseconds" Value="2147483647" Type="System.Int32" />
+    <!--A set of trace values. Zero, one or more of ScanTime, RuleScanTime.-->
+    <Property Key="Traces" Type="StringSet">
+      <Item>None</Item>
+    </Property>
+  </Properties>
+  <Properties Key="GH1001.ProvideRequiredLocationProperties.Options">
+    <Property Key="RuleEnabled" Value="Default" Type="Driver.RuleEnabledState" />
+  </Properties>
+  <Properties Key="GH1002.InlineThreadFlowLocations.Options">
+    <Property Key="RuleEnabled" Value="Default" Type="Driver.RuleEnabledState" />
+  </Properties>
+  <Properties Key="GH1003.ProvideRequiredRegionProperties.Options">
+    <Property Key="RuleEnabled" Value="Default" Type="Driver.RuleEnabledState" />
+  </Properties>
+  <Properties Key="GH1004.ReviewArraysThatExceedConfigurableDefaults.Options">
+    <Property Key="RuleEnabled" Value="Default" Type="Driver.RuleEnabledState" />
+  </Properties>
+  <Properties Key="GH1005.LocationsMustBeRelativeUrisOrFilePaths.Options">
+    <Property Key="RuleEnabled" Value="Default" Type="Driver.RuleEnabledState" />
+  </Properties>
+  <Properties Key="GH1006.ProvideCheckoutPath.Options">
+    <Property Key="RuleEnabled" Value="Default" Type="Driver.RuleEnabledState" />
+  </Properties>
+  <Properties Key="GH1007.ProvideFullyFormattedMessageStrings.Options">
+    <Property Key="RuleEnabled" Value="Default" Type="Driver.RuleEnabledState" />
+  </Properties>
+  <Properties Key="SARIF1001.RuleIdentifiersMustBeValid.Options">
+    <Property Key="RuleEnabled" Value="Default" Type="Driver.RuleEnabledState" />
+  </Properties>
+  <Properties Key="SARIF1002.UrisMustBeValid.Options">
+    <Property Key="RuleEnabled" Value="Default" Type="Driver.RuleEnabledState" />
+  </Properties>
+  <Properties Key="SARIF1004.ExpressUriBaseIdsCorrectly.Options">
+    <Property Key="RuleEnabled" Value="Default" Type="Driver.RuleEnabledState" />
+  </Properties>
+  <Properties Key="SARIF1005.UriMustBeAbsolute.Options">
+    <Property Key="RuleEnabled" Value="Default" Type="Driver.RuleEnabledState" />
+  </Properties>
+  <Properties Key="SARIF1006.InvocationPropertiesMustBeConsistent.Options">
+    <Property Key="RuleEnabled" Value="Default" Type="Driver.RuleEnabledState" />
+  </Properties>
+  <Properties Key="SARIF1007.RegionPropertiesMustBeConsistent.Options">
+    <Property Key="RuleEnabled" Value="Default" Type="Driver.RuleEnabledState" />
+  </Properties>
+  <Properties Key="SARIF1008.PhysicalLocationPropertiesMustBeConsistent.Options">
+    <Property Key="RuleEnabled" Value="Default" Type="Driver.RuleEnabledState" />
+  </Properties>
+  <Properties Key="SARIF1009.IndexPropertiesMustBeConsistentWithArrays.Options">
+    <Property Key="RuleEnabled" Value="Default" Type="Driver.RuleEnabledState" />
+  </Properties>
+  <Properties Key="SARIF1010.RuleIdMustBeConsistent.Options">
+    <Property Key="RuleEnabled" Value="Default" Type="Driver.RuleEnabledState" />
+  </Properties>
+  <Properties Key="SARIF1011.ReferenceFinalSchema.Options">
+    <Property Key="RuleEnabled" Value="Default" Type="Driver.RuleEnabledState" />
+  </Properties>
+  <Properties Key="SARIF1012.MessageArgumentsMustBeConsistentWithRule.Options">
+    <Property Key="RuleEnabled" Value="Default" Type="Driver.RuleEnabledState" />
+  </Properties>
+  <Properties Key="SARIF2001.TerminateMessagesWithPeriod.Options">
+    <Property Key="RuleEnabled" Value="Default" Type="Driver.RuleEnabledState" />
+  </Properties>
+  <Properties Key="SARIF2002.ProvideMessageArguments.Options">
+    <Property Key="RuleEnabled" Value="Default" Type="Driver.RuleEnabledState" />
+  </Properties>
+  <Properties Key="SARIF2003.ProvideVersionControlProvenance.Options">
+    <Property Key="RuleEnabled" Value="Default" Type="Driver.RuleEnabledState" />
+  </Properties>
+  <Properties Key="SARIF2004.OptimizeFileSize.Options">
+    <Property Key="RuleEnabled" Value="Default" Type="Driver.RuleEnabledState" />
+  </Properties>
+  <Properties Key="SARIF2005.ProvideToolProperties.Options">
+    <Property Key="RuleEnabled" Value="Default" Type="Driver.RuleEnabledState" />
+  </Properties>
+  <Properties Key="SARIF2006.UrisShouldBeReachable.Options">
+    <Property Key="RuleEnabled" Value="Disabled" Type="Driver.RuleEnabledState" />
+  </Properties>
+  <Properties Key="SARIF2007.ExpressPathsRelativeToRepoRoot.Options">
+    <Property Key="RuleEnabled" Value="Default" Type="Driver.RuleEnabledState" />
+  </Properties>
+  <Properties Key="SARIF2008.ProvideSchema.Options">
+    <Property Key="RuleEnabled" Value="Default" Type="Driver.RuleEnabledState" />
+  </Properties>
+  <Properties Key="SARIF2009.ConsiderConventionalIdentifierValues.Options">
+    <Property Key="RuleEnabled" Value="Default" Type="Driver.RuleEnabledState" />
+  </Properties>
+  <Properties Key="SARIF2010.ProvideCodeSnippets.Options">
+    <Property Key="RuleEnabled" Value="Default" Type="Driver.RuleEnabledState" />
+  </Properties>
+  <Properties Key="SARIF2011.ProvideContextRegion.Options">
+    <Property Key="RuleEnabled" Value="Default" Type="Driver.RuleEnabledState" />
+  </Properties>
+  <Properties Key="SARIF2012.ProvideRuleProperties.Options">
+    <Property Key="RuleEnabled" Value="Default" Type="Driver.RuleEnabledState" />
+  </Properties>
+  <Properties Key="SARIF2013.ProvideEmbeddedFileContent.Options">
+    <Property Key="RuleEnabled" Value="Default" Type="Driver.RuleEnabledState" />
+  </Properties>
+  <Properties Key="SARIF2014.ProvideDynamicMessageContent.Options">
+    <Property Key="RuleEnabled" Value="Default" Type="Driver.RuleEnabledState" />
+  </Properties>
+  <Properties Key="SARIF2015.EnquoteDynamicMessageContent.Options">
+    <Property Key="RuleEnabled" Value="Default" Type="Driver.RuleEnabledState" />
+  </Properties>
+  <Properties Key="SARIF2016.FileUrisShouldBeRelative.Options">
+    <Property Key="RuleEnabled" Value="Default" Type="Driver.RuleEnabledState" />
+  </Properties>
+</Properties>

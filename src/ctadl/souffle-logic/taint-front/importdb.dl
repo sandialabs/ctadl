@@ -1,0 +1,11 @@
+.input IndirectCallStmt(CTADL_INPUT_DB_IO)
+.input Function(CTADL_INPUT_DB_IO)
+.input Global(CTADL_INPUT_DB_IO)
+.input FormalParam(CTADL_INPUT_DB_IO)
+.input ActualParam(CTADL_INPUT_DB_IO)
+.input Assign(CTADL_INPUT_DB_IO)
+.input AssignFunction(CTADL_INPUT_DB_IO)
+.input DirectCall(CTADL_INPUT_DB_IO)
+.input IndirectCall(CTADL_INPUT_DB_IO)
+.input TaintSpec(CTADL_INPUT_DB_IO)
+

@@ -1,0 +1,87 @@
+#pragma once
+
+// MatchPrefix cases
+// these cases are split based on if none, one, or two access paths are empty
+
+// the tests for CisAccessPath in C2 and C3 are redundant but they make writing
+// plans easier
+
+#define MatchPrefixCase0(p12, p1, p2) AccessPathNonEmptySplit(p12, p1, p2)
+#define MatchPrefixCase1(p12, p1, p2) p1="", p2!="", p12=p2, CisAccessPath(p12)
+#define MatchPrefixCase2(p12, p1, p2) p2="", p1!="", p12=p1, CisAccessPath(p12)
+#define MatchPrefixCase3(p12, p1, p2) p1="", p2="", p12="", CisAccessPath("")
+
+#define MatchComputedPrefixCase0(p12, p1, p2) p1!="", p2!="", p12 !="", ComputedAccessPathNonEmptySplit(p12, p1, p2)
+#define MatchComputedPrefixCase1(p12, p1, p2) p1="", p2!="", p12=p2, isComputedAccessPath(p12)
+#define MatchComputedPrefixCase2(p12, p1, p2) p2="", p1!="", p12=p1, isComputedAccessPath(p12)
+#define MatchComputedPrefixCase3(p12, p1, p2) p1="", p2="", p12="", isComputedAccessPath("")
+
+.decl MatchPrefix(to_split:CAccessPath, prefix:CAccessPath, suffix:CAccessPath) inline
+MatchPrefix(to_split, prefix, suffix) :-
+    MatchPrefixCase0(to_split, prefix, suffix);
+    MatchPrefixCase1(to_split, prefix, suffix);
+    MatchPrefixCase2(to_split, prefix, suffix);
+    MatchPrefixCase3(to_split, prefix, suffix).
+
+.decl MatchComputedPrefix(to_split:CAccessPath, prefix:CAccessPath, suffix:CAccessPath) inline
+MatchComputedPrefix(to_split, prefix, suffix) :-
+    MatchComputedPrefixCase0(to_split, prefix, suffix);
+    MatchComputedPrefixCase1(to_split, prefix, suffix);
+    MatchComputedPrefixCase2(to_split, prefix, suffix);
+    MatchComputedPrefixCase3(to_split, prefix, suffix).
+
+// get a suffix of a path given a path and a prefix
+.decl MatchStringPrefix(to_split: symbol, prefix: symbol, suffix: symbol) inline
+MatchStringPrefix(to_split, prefix, suffix) :-
+  substr(to_split, 0, strlen(prefix)) = prefix,
+  suffix = substr(to_split, strlen(prefix), strlen(to_split) - strlen(prefix)).
+
+.decl AccessPathNonEmptySplit(to_split:CAccessPath, prefix:CAccessPath, suffix:CAccessPath)
+.decl DotIndex(ap: CAccessPath, index: number)
+
+// implementation of splitting access paths, either on every possible split or
+// on ones that split existing aps
+
+DotIndex(ap, i) :-
+    CisAccessPath(ap),
+    strlen(ap) >= 3,
+    i = range(2, strlen(ap)-1),
+    (   substr(ap, i, 1) = ".", substr(ap, i-1, 1) != "."
+    ;   substr(ap, i, 1) = "[" ).
+
+// every possible split
+AccessPathNonEmptySplit(ap, prefix, suffix) :-
+    DotIndex(ap, i),
+    prefix = substr(ap, 0, i),
+    suffix = substr(ap, i, strlen(ap)-i+1),
+    CisAccessPath(prefix),
+    // Same filter as below.
+    !contains(STAR, suffix).
+
+#ifdef ALL_OUTPUTS
+.output AccessPathNonEmptySplit(CTADL_OUTPUT_DB_IO)
+#endif
+
+
+.decl ComputedAccessPathNonEmptySplit(to_split:CAccessPath, prefix:CAccessPath, suffix:CAccessPath)
+.decl ComputedDotIndex(ap: CAccessPath, index: number)
+ComputedDotIndex(ap, i) :-
+    isComputedAccessPath(ap),
+    strlen(ap) >= 3,
+    i = range(2, strlen(ap)-1),
+    (   substr(ap, i, 1) = ".", substr(ap, i-1, 1) != "."
+    ;   substr(ap, i, 1) = "[").
+
+ComputedAccessPathNonEmptySplit(ap, prefix, suffix) :-
+    ComputedDotIndex(ap, i),
+    prefix = substr(ap, 0, i),
+    suffix = substr(ap, i, strlen(ap)-i+1),
+    isComputedAccessPath(prefix),
+    // Filters out .* paths because they shouldn't be propagated. They can be
+    // *introduced* with abstraction and they can be *matched* with matching
+    // rules but they shouldn' be propagation with star rules or with fieldprop
+    // rules. Propagatiing them leads to a proliferation of badness.
+    !contains(STAR, suffix).
+
+CTADLStats("AccessPathNonEmptySplit", n) :- n = count : { AccessPathNonEmptySplit(_, _, _) }.
+CTADLStats("ComputedAccessPathNonEmptySplit", n) :- n = count : { ComputedAccessPathNonEmptySplit(_, _, _) }.

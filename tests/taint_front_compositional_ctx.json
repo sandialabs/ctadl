@@ -1,0 +1,14 @@
+{
+  "VirtualAssign": {
+    "includes": [{
+      "insn": "service/call/2",
+      "v1": "service/second",
+      "v2": "service/first"
+    }],
+    "excludes": [{
+      "insn": "service/call/3",
+      "v1": "service/third",
+      "v2": "service/first"
+    }]
+  }
+}

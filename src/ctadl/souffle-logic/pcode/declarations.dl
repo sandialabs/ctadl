@@ -1,0 +1,162 @@
+#pragma once
+
+#define PCODE_RET_ARG_INDEX (-1)
+#define PCODE_FUNC_ARG_INDEX (-2)
+#define PCODE_GLOBALS_ARG_INDEX (-3)
+
+.decl PROGRAM_FILE(filename: symbol)
+
+.decl HFUNC_FUNC(id: PCodeHighFunc, func_id: symbol)
+.decl HFUNC_TOSTR(id: PCodeHighFunc, str: symbol)
+.decl HFUNC_PROTO(id: PCodeHighFunc, proto: PCodeHighPrototype)
+.decl HFUNC_EP(id: PCodeHighFunc, ep: PCodeAddress)
+.decl HFUNC_LOCAL_EP(ep: PCodeAddress, addr: PCodeAddress)
+.decl HFUNC_ISEXT(id: PCodeHighFunc)
+.decl HFUNC_CSPEC(id: PCodeHighFunc, cspec: symbol)
+.decl HFUNC_LANG(id: PCodeHighFunc, lang: symbol)
+.decl HFUNC_NAME(id: PCodeHighFunc, name: symbol)
+
+.decl HVAR_NAME(id: PCodeHighVar, name: symbol)
+.decl HVAR_SIZE(id: PCodeHighVar, size: number)
+.decl HVAR_CLASS(id: PCodeHighVar, class: symbol)
+.decl HVAR_SCOPE(id: PCodeHighVar, pc_address: PCodeAddress)
+.decl HVAR_TYPE(id: PCodeHighVar, type: PCodeType)
+.decl HVAR_REPRESENTATIVE(id: PCodeHighVar, vnode_id: PCodeVarnode)
+
+.decl PCODE_TOSTR(id: PCodeInstruction, str: symbol)
+// See mnemonics below
+.decl PCODE_MNEMONIC(id: PCodeInstruction, mnemonic: symbol)
+.decl PCODE_OPCODE(id: PCodeInstruction, opcode: symbol)
+.decl PCODE_PARENT(id: PCodeInstruction, bbid: PCodeBlockBasic)
+.decl PCODE_TARGET(id: PCodeInstruction, target_address: PCodeAddress)
+.decl PCODE_INPUT_COUNT(id: PCodeInstruction, n: number)
+.decl PCODE_INPUT(id: PCodeInstruction, i: number, vnode_id: PCodeVarnode)
+.decl PCODE_OUTPUT(id: PCodeInstruction, vnode_id: PCodeVarnode)
+.decl PCODE_NEXT(prev: PCodeInstruction, next: PCodeInstruction)
+.decl PCODE_TIME(id: PCodeInstruction, time: number)
+.decl PCODE_INDEX(id: PCodeInstruction, index: number)
+
+.decl VNODE_ADDRESS(id: PCodeVarnode, address: PCodeAddress)
+.decl VNODE_IS_ADDRESS(id: PCodeVarnode)
+.decl VNODE_IS_ADDRTIED(id: PCodeVarnode)
+.decl VNODE_PC_ADDRESS(id: PCodeVarnode, pc_address: PCodeAddress)
+.decl VNODE_DESC(id: PCodeVarnode, desc: symbol)
+.decl VNODE_NAME(id: PCodeVarnode, name: symbol)
+.decl VNODE_OFFSET(id: PCodeVarnode, offset: symbol)
+.decl VNODE_OFFSET_N(id: PCodeVarnode, offset: number)
+.decl VNODE_SIZE(id: PCodeVarnode, size: number)
+.decl VNODE_SPACE(id: PCodeVarnode, space: symbol)
+.decl VNODE_TOSTR(id: PCodeVarnode, str: symbol)
+.decl VNODE_HVAR(id: PCodeVarnode, hvar_id: PCodeHighVar)
+.decl VNODE_HFUNC(id: PCodeVarnode, hfunc_id: PCodeHighFunc)
+.decl VNODE_DEF(id: PCodeVarnode, def: PCodeInstruction)
+
+.decl OFFSET_INDEX(offset: number, idx: number)
+
+.decl TYPE_NAME(id: PCodeType, name: symbol)
+.decl TYPE_LENGTH(id: PCodeType, len: number)
+.decl TYPE_POINTER(id: PCodeType)
+.decl TYPE_POINTER_BASE(id: PCodeType, base_id: PCodeType)
+.decl TYPE_ARRAY(id: PCodeType)
+.decl TYPE_ARRAY_BASE(id: PCodeType, base_id: PCodeType)
+.decl TYPE_ARRAY_N(id: PCodeType, num_elts: number)
+.decl TYPE_ARRAY_ELEMENT_LENGTH(id: PCodeType, n: number)
+.decl TYPE_STRUCT(id: PCodeType)
+.decl TYPE_STRUCT_FIELD(id: PCodeType, n: number, ty: PCodeType)
+.decl TYPE_STRUCT_OFFSET(id: PCodeType, n: number, offset: symbol)
+.decl TYPE_STRUCT_OFFSET_N(id: PCodeType, n: number, offset: number)
+.decl TYPE_STRUCT_FIELD_NAME(id: PCodeType, n: number, name: symbol)
+.decl TYPE_STRUCT_FIELD_NAME_BY_OFFSET(id: PCodeType, offset: number, name: symbol)
+.decl TYPE_STRUCT_FIELD_COUNT(id: PCodeType, n: number)
+.decl TYPE_UNION(id: PCodeType)
+.decl TYPE_UNION_FIELD(id: PCodeType, n: number, ty: PCodeType)
+.decl TYPE_UNION_OFFSET(id: PCodeType, n: number, offset: symbol)
+.decl TYPE_UNION_OFFSET_N(id: PCodeType, n: number, offset: number)
+.decl TYPE_UNION_FIELD_NAME(id: PCodeType, n: number, name: symbol)
+.decl TYPE_UNION_FIELD_NAME_BY_OFFSET(id: PCodeType, offset: number, name: symbol)
+.decl TYPE_UNION_FIELD_COUNT(id: PCodeType, n: number)
+.decl TYPE_FUNC(id: PCodeType)
+.decl TYPE_FUNC_RET(id: PCodeType, ty: PCodeType)
+.decl TYPE_FUNC_VARARGS(id: PCodeType)
+.decl TYPE_FUNC_PARAM_COUNT(id: PCodeType, n: number)
+.decl TYPE_FUNC_PARAM(id: PCodeType, n: number, arg: PCodeParameterDefinition)
+.decl TYPE_BOOLEAN(id: PCodeType)
+.decl TYPE_INTEGER(id: PCodeType)
+.decl TYPE_FLOAT(id: PCodeType)
+.decl TYPE_ENUM(id: PCodeType)
+
+.decl BB_IN(bbid: PCodeBlockBasic, bbid_in: PCodeBlockBasic)
+.decl BB_OUT(bbid: PCodeBlockBasic, bbid_out: PCodeBlockBasic)
+.decl BB_FOUT(bbid: PCodeBlockBasic, bbid_false: PCodeBlockBasic)
+.decl BB_TOUT(bbid: PCodeBlockBasic, bbid_true: PCodeBlockBasic)
+.decl BB_FIRST(bbid: PCodeBlockBasic, pcode: PCodeInstruction)
+.decl BB_LAST(bbid: PCodeBlockBasic, pcode: PCodeInstruction)
+.decl BB_HFUNC(bbid: PCodeBlockBasic, hfunc: PCodeHighFunc)
+.decl BB_START(bbid: PCodeBlockBasic, start_address: PCodeAddress)
+
+.decl PROTO_IS_CONSTRUCTOR(id: PCodeHighPrototype)
+.decl PROTO_IS_DESTRUCTOR(id: PCodeHighPrototype)
+.decl PROTO_IS_VARARG(id: PCodeHighPrototype)
+.decl PROTO_IS_INLINE(id: PCodeHighPrototype)
+.decl PROTO_IS_VOID(id: PCodeHighPrototype)
+.decl PROTO_HAS_THIS(id: PCodeHighPrototype)
+.decl PROTO_CALLING_CONVENTION(id: PCodeHighPrototype, cc: PCodeGenericCallingConvention)
+.decl PROTO_RETTYPE(id: PCodeHighPrototype, retty: PCodeType)
+.decl PROTO_PARAMETER(id: PCodeHighPrototype, n: number, hs_id: PCodeHighSymbol)
+.decl PROTO_PARAMETER_COUNT(id: PCodeHighPrototype, n: number)
+.decl PROTO_PARAMETER_DATATYPE(hs_id: PCodeHighSymbol, ty: PCodeType)
+
+.decl SYMBOL_HVAR(id: PCodeHighSymbol, hvar_id: PCodeHighVar)
+.decl SYMBOL_HFUNC(id: PCodeHighSymbol, hfunc_id: PCodeHighFunc)
+.decl SYMBOL_NAME(id: PCodeHighSymbol, name: symbol)
+
+.decl DATA_STRING(addr: PCodeAddress, string: symbol)
+// vtable @ address, offset points to func
+.decl VTABLE(class_name: symbol, vtable_address: PCodeAddress, offset: number, func_address: PCodeAddress)
+
+// PCODE Mnemonics
+// BOOL_AND
+// BOOL_NEGATE
+// BOOL_OR
+// BRANCH
+// BRANCHIND
+// CALL
+// CALLIND
+// CAST
+// CBRANCH
+// COPY
+// INDIRECT
+// INT_2COMP
+// INT_ADD
+// INT_AND
+// INT_CARRY
+// INT_DIV
+// INT_EQUAL
+// INT_LEFT
+// INT_LESS
+// INT_LESSEQUAL
+// INT_MULT
+// INT_NEGATE
+// INT_NOTEQUAL
+// INT_OR
+// INT_REM
+// INT_RIGHT
+// INT_SCARRY
+// INT_SDIV
+// INT_SEXT
+// INT_SLESS
+// INT_SLESSEQUAL
+// INT_SREM
+// INT_SRIGHT
+// INT_SUB
+// INT_XOR
+// INT_ZEXT
+// LOAD
+// MULTIEQUAL
+// PIECE
+// POPCOUNT
+// PTRADD
+// PTRSUB
+// RETURN
+// STORE
+// SUBPIECE

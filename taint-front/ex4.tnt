@@ -1,0 +1,18 @@
+def Main() {
+  x.bar = source(Network);
+  r = A(x, y);
+  sink(y.foo, Network);
+}
+
+def A(ain, aout) {
+  r1 = B(ain, tmp);
+  r2 = C(tmp, aout);
+}
+
+def B(bin, bout) {
+  bout.baz = bin.bar;
+}
+
+def C(cin, cout) {
+  cout.foo = cin.baz;
+}

@@ -1,0 +1,46 @@
+prop-alias: {
+  x -> x_G: .G
+  x_G: " "
+  x_G -> x_GF: .F
+  x_GF: " " { style: { fill: green } }
+
+  y -> y_H: .H
+  y_H: " "
+  y_H -> y_HF: .F
+
+  # Alias
+  x_G -> y_H { style: { stroke: green; stroke-width: 3 } }
+  y_HF: " " { style: { fill: "linear-gradient(#f69d3c, green)" } }
+}
+
+prop-original: {
+  x -> x_G: .G
+  x_G: " "
+  x_G -> x_GF: .F
+  x_GF: " "
+
+  y -> y_H: .H
+  y_H: " "
+  y_H -> y_HF: .F
+  y_HF: " " { style: { fill: green } }
+
+  # Alias
+  x_G -> y_H { style: { stroke: green; stroke-width: 3 } }
+  x_GF: " " { style: { fill: "linear-gradient(#f69d3c, green)" } }
+}
+
+interproc: {
+  x -> x_G: .G
+  x_G: actual*->formal
+  x_G -> x_GJ: .J
+  x_GJ: " "
+
+  y -> y_H: .H
+  y_H: actual*->formal
+  y_H -> y_HK: .K
+  y_HK: " "
+
+  # Alias
+  x_GJ -> y_HK { style: { stroke: green; stroke-width: 3 } }
+
+}

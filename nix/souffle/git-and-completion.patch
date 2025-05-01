@@ -1,0 +1,51 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 6f2090ffa..8aac6099a 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -24,36 +24,6 @@
+ 
+ cmake_minimum_required(VERSION 3.15)
+ 
+-find_package(Git REQUIRED)
+-
+-# PACKAGE_VERSION is the full tag with git hash
+-execute_process(COMMAND ${GIT_EXECUTABLE} describe --tags --always
+-                WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+-                RESULT_VARIABLE GIT_RESULT
+-                OUTPUT_VARIABLE GIT_PACKAGE_VERSION)
+-                # FIXME: Use in cmake 3.19 or later
+-                # COMMAND_ERROR_IS_FATAL ANY)
+-
+-# Figure out the version number, depends on whether building from the git repo
+-if (NOT GIT_RESULT EQUAL 0)
+-    # Not building from a git clone
+-    message(WARNING "Unable to find git repository: version number will be incomplete")
+-    set(PACKAGE_VERSION "UNKOWN")
+-    set(SOUFFLE_VERSION "")
+-else()
+-    string(REGEX REPLACE "\n$" "" PACKAGE_VERSION "${GIT_PACKAGE_VERSION}")
+-    message(STATUS "Building souffle version ${PACKAGE_VERSION}")
+-
+-    # SOUFFLE_VERSION only includes the major/minor triplet
+-    string(REGEX REPLACE "-.*$" "" SOUFFLE_VERSION "${PACKAGE_VERSION}")
+-
+-    # If building from a shallow clone where tag is not available.
+-    if (NOT ${SOUFFLE_VERSION} MATCHES "^[0-9.]+$")
+-        message(WARNING "Cannot find a valid tag: cmake project version will be incomplete")
+-        set (SOUFFLE_VERSION "")
+-    endif()
+-endif()
+-
+ project(souffle VERSION "${SOUFFLE_VERSION}"
+                 DESCRIPTION "A datalog compiler"
+                 LANGUAGES CXX)
+@@ -312,7 +282,7 @@ find_package (bash-completion)
+ if (BASH_COMPLETION_FOUND)
+     message(STATUS "Using bash completion dir ${BASH_COMPLETION_COMPLETIONSDIR}")
+ else()
+-    set (BASH_COMPLETION_COMPLETIONSDIR "/etc/bash_completion.d")
++    set (BASH_COMPLETION_COMPLETIONSDIR "${CMAKE_INSTALL_PREFIX}/share/bash-completion/completions" CACHE PATH "Location of bash_completion.d")
+     message (STATUS "Using fallback bash completion dir ${BASH_COMPLETION_COMPLETIONSDIR}")
+ endif()
+ 
+

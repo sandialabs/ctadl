@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+
+set -e
+set -o pipefail
+set -x
+
+top="$(git rev-parse --show-toplevel)"
+outdir="$top/ctadl-test-output"
+cd $outdir
+
+ctadlbench=$outdir/DroidBench
+git clone https://github.com/secure-software-engineering/DroidBench.git $outdir/DroidBench || echo "Clone failed, ignoring"
+
+# Intent test
+ctadl import JADX $ctadlbench/apk/InterComponentCommunication/ActivityCommunication4.apk --out ActivityCommunication4_facts -f
+ctadl index -f ActivityCommunication4_facts
+ctadl query $top/tests/androidtest-query.json --format=sarif > ActivityCommunication4.sarif
+rm -rf ActivityCommunication4_facts
+
+# Test intent assignments are added correctly
+python3 $top/tests/test_ctadlir.py $top/tests/taint_intent.json
+
+# Test intent taint path is found
+jq '.runs[].results[].ruleId | select(. == "C0001")' ActivityCommunication4.sarif > ActivityCommunication4_success.txt
+if [ -s ActivityCommunication4_success.txt ]; then
+    echo "Intent Test Success"
+else
+    echo "Intent Test failed; exiting"
+    exit 1
+fi
+
+ctadl export --format gml -o ActivityCommunication4-export.gml

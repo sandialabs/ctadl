@@ -1,0 +1,35 @@
+var g1;
+var g2;
+var g3;
+var g4;
+var g5;
+var g6;
+
+def B() {
+    g6 = g5;
+    D();
+}
+
+
+def D() {
+  p.f = g6;
+  A(p);
+}
+
+def A(p) {
+  g3 = p.f;
+}
+
+def Main() {
+  g5 = source(Net);
+  B();
+  sink(g3, Net);
+}
+
+// With compositional globals:
+
+// SummaryFlow
+// B:
+// g6 <- g5
+// D:
+// g3 <- g6

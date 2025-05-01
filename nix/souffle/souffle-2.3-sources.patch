@@ -1,0 +1,25 @@
+diff --git a/src/main.cpp b/src/main.cpp
+index 8f4ba085c..b03db7286 100644
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -196,9 +196,9 @@ void compileToBinary(const std::string& command, std::string_view sourceFilename
+     argv.push_back(std::string(sourceFilename));
+ 
+ #if defined(_MSC_VER)
+-    const char* interpreter = "python";
++    const char* interpreter = "bash";
+ #else
+-    const char* interpreter = "python3";
++    const char* interpreter = "bash";
+ #endif
+     auto exit = execute(interpreter, argv);
+     if (!exit) throw std::invalid_argument(tfm::format("unable to execute tool <python3 %s>", command));
+@@ -303,7 +303,7 @@ public:
+         return Stream;
+     }
+ 
+-    bool endInput() {
++    bool endInput() override {
+         const int Status = pclose(Stream);
+         Stream = nullptr;
+         if (Status == -1) {

@@ -1,0 +1,8 @@
+// summary should flow ret <- p.f.*
+// no summary without star abstraction
+def F(p) {
+    a = p;
+    b = a.f;
+    c = b.g;
+    return c;
+}

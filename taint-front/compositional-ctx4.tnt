@@ -1,0 +1,38 @@
+def id_h(x) {
+  return x;
+}
+def id_i(x) {
+  return x;
+}
+def id_j(x) {
+  return x;
+}
+
+def H(f, g, x) {
+  h = id_j;
+  // tmp1 <- x    (G#F#Main#)
+  tmp1 = f(x);
+  // tmp1 <- tmp1 (G#F#Main#)
+  tmp2 = g(tmp1);
+  // tmp3 <- tmp2
+  tmp3 = h(tmp2);
+  return tmp3;
+}
+def G(f, g, x) {
+  // F#Main#: f -> G
+  // F#Main#: g -> H
+  par2 = id_i;
+  tmp = g(f, par2, x);
+  return tmp;
+}
+def F(f, x) {
+  g = H;
+  par1 = id_h;
+  tmp = f(par1, g, x);
+  return tmp;
+}
+def Main() {
+  f = G;
+  // x -> tmp
+  tmp = F(f, x);
+}

@@ -1,0 +1,139 @@
+#include "ctadl_schema.dl"
+#include "taint-front/types.dl"
+#include "taint-front/macros.dl"
+#include "taint-front/declarations.dl"
+
+// local var in function
+.decl Local(var: symbol, fn: symbol)
+
+Local(orig, fn) :-
+    (   Assign(orig, _, _, _, fn, _);
+        Assign(_, _, orig, _, fn, _);
+        FormalParam(_, fn, orig);
+        ActualParam(_, orig, _, [_, fn]);
+        AssignFunction(orig, _, _, fn, _);
+        IndirectCall(orig, _, [_, fn]);
+        TaintSpec(_, orig, _, _, fn, _, _, _);
+        TaintSpec(_, _, _, _, fn, _, orig, _)),
+    !Global(orig, _).
+
+// ---------------------------------------------------------------------------
+
+CFunction_Arity(fn, arity), CisFunction(fn), CFunction_Name(fn, fn) :- Function(fn, arity).
+
+CVar_InFunction(var, fn),
+CVar_Name(var, name) :- Local(name, fn), var = cat(fn, "/", name).
+
+CFunction_FormalParam(fn, n, v) :-
+    FormalParam(n, fn, iv),
+    TaintFront_MkVar(fn, iv, v, p),
+    p = p.
+
+CFunction_isFormalParamByRef(fn, -1) :- CFunction_FormalParam(fn, -1, _).
+CReturnParameter(-1).
+
+// translates assignments
+CInsn_InFunction(stmt, sid, fn),
+CInsn_Move(stmt, v1, p1, v2, p2) :-
+    Assign(iv1, ip1, iv2, ip2, fn, sid),
+    TaintFront_MkVar(fn, iv1, v1, tp1),
+    TaintFront_MkVar(fn, iv2, v2, tp2),
+    p1 = cat(tp1, ip1),
+    p2 = cat(tp2, ip2),
+    stmt = TaintFront_MkStmt(fn, "assign", to_string(sid)).
+
+// translates actuals
+CInsn_InFunction(stmt, cid, fn),
+CCall_ActualParam(stmt, n, v, p) :-
+    ActualParam(n, iv, ip, [cid, fn]),
+    TaintFront_MkVar(fn, iv, v, tp),
+    p = cat(tp, ip),
+    ((DirectCall(_, [cid, fn]), stmt = TaintFront_MkStmt(fn, "call", to_string(cid)));
+     (IndirectCall(_, _, [cid, fn]), stmt = TaintFront_MkStmt(fn, "indirect-call", to_string(cid)))).
+
+CInsn_InFunction(stmt, cid, fn_from),
+CInsn_UnsuspiciousCall(stmt, fn_to) :-
+    DirectCall(fn_to, [cid, fn_from]),
+    stmt = TaintFront_MkStmt(fn_from, "call", to_string(cid)).
+
+CInsn_Use(v, p) :-
+    (   TaintSpec(_, iv, ip, _, fn, _, _, _);
+        TaintSpec(_, _, _, _, fn, _, iv, ip);
+        AssignFunction(iv, ip, _, fn, _)),
+    TaintFront_MkVar(fn, iv, v, tp),
+    p = cat(tp, ip).
+
+CCall_ActualParam(s, -2, v, p),
+CCall_VirtualBase(s, -2),
+CInsn_InFunction(s, cid, fn_from),
+CInsn_Use(v, p),
+IndirectCallStmt(s, v, p) :-
+    IndirectCall(iv, ip, [cid, fn_from]),
+    TaintFront_MkVar(fn_from, iv, v, tp),
+    p = cat(tp, ip),
+    s = TaintFront_MkStmt(fn_from, "indirect-call", to_string(cid)).
+
+CisAccessPath(ap) :-
+    CInsn_Move(_, _, ap, _, _);
+    CInsn_Move(_, _, _, _, ap);
+    ActualParam(_, _, ap, _);
+    Assign(_, ap, _, _, _, _);
+    Assign(_, _, _, ap, _, _);
+    AssignFunction(_, ap, _, _, _);
+    IndirectCall(_, ap, _);
+    TaintSpec(_, _, ap, _, _, _, _, _);
+    TaintSpec(_, _, _, _, _, _, _, ap).
+
+
+CisAlloc(v, p, func),
+CInsn_InFunction(insn, sid, fid),
+AssignFunctionStmt(insn, v, p, func) :-
+    AssignFunction(iv, ip, func, fid, sid),
+    TaintFront_MkVar(fid, iv, v, tp),
+    p = cat(tp, ip),
+    insn = TaintFront_MkStmt(fid, "assign-function", to_string(sid)).
+
+IndirectCallResolventFunction(stmt, funcref, funcref) :-
+    IndirectCallResolvent(_, stmt, funcref).
+
+CisNamespace(fn) :- Function(fn, _).
+
+.decl GlobalParam(pos: number, name: symbol)
+
+GlobalParam(-3, GlobalsParamName) :- ReadsGlobal(_, _); WritesGlobal(_, _).
+
+CVar_InFunction(var, fn),
+CVar_Name(var, GlobalsParamName) :- Function(fn, _), var = cat(fn, "/", GlobalsParamName), GlobalParam(_, _).
+
+CFunction_isFormalParamByRef(fn, n),
+CVar_InFunction(v, fn),
+CVar_Name(v, gparam),
+CFunction_FormalParam(fn, n, v) :-
+    Function(fn, _),
+    GlobalParam(n, gparam),
+    v = cat(fn, "/", gparam).
+
+CCall_ActualParam(insn, n, v, p) :-
+    (CInsn_UnsuspiciousCall(insn, _); IndirectCallStmt(insn, _, _)),
+    GlobalParam(n, gparam),
+    CInsn_InFunction(insn, _, fn),
+    v = cat(fn, "/", gparam),
+    p = "".
+
+.decl WritesGlobal(fn: symbol, global: symbol)
+WritesGlobal(fn, iv) :-
+    Assign(iv, _, _, _, fn, _),
+    Global(iv, _).
+
+.decl ReadsGlobal(fn: symbol, global: symbol)
+ReadsGlobal(fn, iv) :-
+    Assign(_, _, iv, _, fn, _),
+    Global(iv, _).
+
+#ifdef ALL_OUTPUTS
+//.output UsesGlobals(CTADL_OUTPUT_DB_IO)
+.output Local(CTADL_OUTPUT_DB_IO)
+.output WritesGlobal(CTADL_OUTPUT_DB_IO)
+.output ReadsGlobal(CTADL_OUTPUT_DB_IO)
+//.output PassthruGlobals(CTADL_OUTPUT_DB_IO)
+#endif

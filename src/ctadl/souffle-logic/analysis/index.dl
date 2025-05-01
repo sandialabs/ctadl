@@ -1,0 +1,4 @@
+// Indexes a CTADL IR database regardless of the target language
+
+#include "ctadl_ir.dl"
+#include "ctadl_ir_importdb.dl"

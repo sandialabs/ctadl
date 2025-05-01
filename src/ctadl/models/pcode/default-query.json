@@ -1,0 +1,417 @@
+{
+  "model_generators": [
+    {
+      "find": "methods",
+      "where": [
+        { "constraint": "signature_match", "names": ["getenv", "_getenv"] }
+      ],
+      "model": {
+        "sources": [
+          {
+            "kind": "Env",
+            "port": "Return"
+          }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [ "recv", "_recv", "recvmsg", "_recvmsg" ]
+        }
+      ],
+      "model": {
+        "sources": [
+          {
+            "kind": "Network",
+            "port": "Argument(1)"
+          }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [ "getnameinfo", "_getnameinfo"]
+        }
+      ],
+      "model": {
+        "sources": [
+          { "kind": "Network", "port": "Argument(2)" },
+          { "kind": "Network", "port": "Argument(4)" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [ "gethostname", "_gethostname" ]
+        }
+      ],
+      "model": {
+        "sources": [
+          { "kind": "Network", "port": "Argument(1)" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [ "socket", "_socket" ]
+        }
+      ],
+      "model": {
+        "sources": [
+          { "kind": "Network", "port": "Return" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "open", "_open",
+            "fdopen", "_fdopen",
+            "fopen", "_fopen",
+            "freopen", "_freopen"
+          ]
+        }
+      ],
+      "model": {
+        "sources": [
+          { "kind": "Network", "port": "Return" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "read", "_read",
+            "pread", "_pread",
+            "getgroups", "_getgroups",
+            "readlink", "_readlink"
+          ]
+        }
+      ],
+      "model": {
+        "sources": [
+          { "kind": "File", "port": "Argument(1)" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [ "fread", "_fread" ]
+        }
+      ],
+      "model": {
+        "sources": [
+          { "kind": "File", "port": "Argument(0)" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [ "readlinkat", "_readlinkat" ]
+        }
+      ],
+      "model": {
+        "sources": [
+          { "kind": "File", "port": "Argument(2)" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [ "readlinkat", "_readlinkat" ]
+        }
+      ],
+      "model": {
+        "sources": [
+          { "kind": "File", "port": "Return" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [ "getlogin", "_getlogin" ]
+        }
+      ],
+      "model": {
+        "sources": [
+          { "kind": "User", "port": "Argument(0)" },
+          { "kind": "User", "port": "Return" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [ "getseuserbyname", "_getseuserbyname" ]
+        }
+      ],
+      "model": {
+        "sources": [
+          { "kind": "User", "port": "Argument(1)" },
+          { "kind": "User", "port": "Argument(2)" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "gets", "_gets",
+            "gets_s", "_gets_s"
+          ]
+        }
+      ],
+      "model": {
+        "sources": [
+          { "kind": "User", "port": "Argument(0)" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "getchar", "_getchar",
+            "getch", "_getch",
+            "getchar_unlocked", "_getchar_unlocked",
+            "IO_getc", "_IO_getc"
+          ]
+        }
+      ],
+      "model": {
+        "sources": [
+          { "kind": "IO", "port": "Return" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "scanf", "_scanf",
+            "scanf_s", "_scanf_s",
+            "wgetch", "_wgetch"
+          ]
+        }
+      ],
+      "model": {
+        "sources": [
+          { "kind": "IO", "port": "Argument(1)" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "get_current_dir_name", "_get_current_dir_name",
+            "getcwd", "_getcwd",
+            "getwd", "_getwd"
+          ]
+        }
+      ],
+      "model": {
+        "sources": [
+          { "kind": "Directory", "port": "Return" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "dlopen", "_dlopen"
+          ]
+        }
+      ],
+      "model": {
+        "sinks": [
+          { "kind": "DynamicLibrary", "port": "Argument(0)" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "execl", "_execl",
+            "execle", "_execle",
+            "execlp", "_execlp",
+            "execvp", "_execvp",
+            "execvP", "_execvP",
+            "execve", "_execve",
+            "system", "_system",
+            "popen", "_popen"
+          ]
+        }
+      ],
+      "model": {
+        "sinks": [
+          { "kind": "Execute", "port": "Argument(0)" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "send", "_send",
+            "sendmsg", "_sendmsg",
+            "sendto", "_sendto"
+          ]
+        }
+      ],
+      "model": {
+        "sinks": [
+          { "kind": "Network", "port": "Argument(1)" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "write", "_write",
+            "pwrite", "_pwrite"
+          ]
+        }
+      ],
+      "model": {
+        "sinks": [
+          { "kind": "Network", "port": "Argument(1)" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "fwrite", "_fwrite"
+          ]
+        }
+      ],
+      "model": {
+        "sinks": [
+          { "kind": "Network", "port": "Argument(0)" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "malloc", "_malloc",
+            "calloc", "_calloc",
+            "alloca", "_alloca"
+          ]
+        }
+      ],
+      "model": {
+        "sinks": [
+          { "kind": "AllocSize", "port": "Argument(0)" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "realloc", "_realloc"
+          ]
+        }
+      ],
+      "model": {
+        "sinks": [
+          { "kind": "AllocSize", "port": "Argument(1)" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "memcpy", "_memcpy"
+          ]
+        }
+      ],
+      "model": {
+        "sinks": [
+          { "kind": "AllocSize", "port": "Argument(2)" }
+        ]
+      }
+    },
+    {
+      "find": "methods",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": [
+            "setproctitle", "_setproctitle",
+            "setproctitle_fast", "_setproctitle_fast"
+          ]
+        }
+      ],
+      "model": {
+        "sinks": [
+          { "kind": "AllocSize", "port": "Argument(0)" }
+        ]
+      }
+    }
+  ]
+}

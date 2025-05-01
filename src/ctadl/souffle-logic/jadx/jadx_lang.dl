@@ -1,0 +1,578 @@
+#pragma once
+#include "jadx-fact-decls.dl"
+
+// extra facts produced by our ctadl-jadx plugin
+.decl _SARIFLineRegion(id: number, startLine: number, startColumn: number, endLine: number, endColumn: number)
+.decl _SARIFCharRegion(id: number, charOffset: number, charLength: number)
+.decl _SARIFByteRegion(id: number, byteOffset: number, byteLength: number)
+.decl _SARIFArtifactLocation(id: number, uri: symbol, uriBaseId: symbol)
+.decl _DecompilerSourceMap(binary_artifact_id: number, binary_region_id: number, source_artifact_id: number, source_region_id: number)
+
+#define MakeFieldAP(field, type) cat(".", field, ":<", type, ">")
+// expects an integer index
+#define MakeArrayAP(index) cat("[", to_string(index), "]")
+
+CReturnParameter(JADX_RET_ARG_INDEX).
+
+
+CGlobalParameter(-3).
+
+// ---------------------------------------------------------------------------
+
+// uses a <globals> formal parameter to each function to thread the globals
+
+// name of extra parameter that is like a struct of all global vars
+#define GlobalsParamName "<globals>"
+
+// makes a field access of the Globals object
+#define MkGlobalField(cls, field) \
+    cat(".", field, "@", cls)
+
+// translates SGET and SPUT to accesses of <globals>.global_field
+CVar_Type(global_param, global_field, type),
+CVar_InFunction(global_param, method),
+CFunction_isFormalParamByRef(method, pos),
+CFunction_FormalParam(method, pos, global_param),
+CVar_Name(global_param, GlobalsParamName),
+CisField(global_field),
+CField_Name(global_field, field),
+CNamespace_Parent(global_field, cls),
+CInsn_Move(insn, to_var, "", global_param, global_field) :-
+    _StaticGet(insn, cls, field, type, to_var),
+    _StmtInMethod(insn, _, method),
+    global_param = cat(method, "/", GlobalsParamName),
+    global_field = MkGlobalField(cls, field),
+    pos = -3.
+
+CVar_Type(global_param, global_field, type),
+CVar_InFunction(global_param, method),
+CFunction_isFormalParamByRef(method, pos),
+CFunction_FormalParam(method, pos, global_param),
+CVar_Name(global_param, GlobalsParamName),
+CisField(global_field),
+CField_Name(global_field, field),
+CNamespace_Parent(global_field, cls),
+CInsn_Move(insn, global_param, global_field, from_var, "") :-
+    _StaticPut(insn, cls, field, type, from_var),
+    _StmtInMethod(insn, _, method),
+    global_param = cat(method, "/", GlobalsParamName),
+    global_field = MkGlobalField(cls, field),
+    pos = -3.
+
+CVar_SourceInfo(path, SOURCE_INFO_NAME_KEY, cat(cls, ".", field)) :-
+    (_StaticPut(_, cls, field, _, _); _StaticGet(_, cls, field, _, _)),
+    path = cat(GlobalsParamName, MkGlobalField(cls, field)).
+
+// threads globals to callee
+CVar_InFunction(global_param, method),
+CFunction_isFormalParamByRef(method, pos),
+CFunction_FormalParam(method, pos, global_param),
+CVar_Name(global_param, GlobalsParamName),
+CCall_ActualParam(stmt, pos, global_param, "") :-
+    _ActualParam(stmt, _, _),
+    _StmtInMethod(stmt, _, method),
+    pos = -3,
+    global_param = cat(method, "/", GlobalsParamName).
+
+
+
+
+CSourceInfo_Location(stmt, source_artifact_id, source_region_id) :-
+    // bytecode location
+    _InsnBytecodeLocation(stmt, bytecode_uri, bytecode_uri_base_id, byte_offset, byte_length),
+    _SARIFArtifactLocation(bytecode_artifact_id, bytecode_uri, bytecode_uri_base_id),
+    _SARIFByteRegion(bytecode_region_id, byte_offset, byte_length),
+
+    // find mapping
+    _DecompilerSourceMap(bytecode_artifact_id, bytecode_region_id, source_artifact_id, source_region_id).
+
+CSourceInfo_File(source_artifact_id, file) :-
+    _SARIFArtifactLocation(source_artifact_id, file, _).
+CFile_UriBaseId(source_artifact_id, base_id) :-
+    _SARIFArtifactLocation(source_artifact_id, _, base_id).
+CSourceInfo_LineRegion(source_region_id, startLine) :-
+    _SARIFLineRegion(source_region_id, startLine, _, _, _).
+CLineRegion_EndColumn(source_region_id, endColumn) :-
+    _SARIFLineRegion(source_region_id, _, _, _, endColumn), endColumn >= 0.
+CLineRegion_StartColumn(source_region_id, startColumn) :-
+    _SARIFLineRegion(source_region_id, _, startColumn, _, _), startColumn >= 0.
+CLineRegion_EndLine(source_region_id, endLine) :-
+    _SARIFLineRegion(source_region_id, _, _, endLine, _), endLine >= 0.
+
+
+.decl ErrorInsn(stmt: symbol, message: symbol)
+.output ErrorInsn(CTADL_OUTPUT_DB_IO)
+.decl ErrorMethod(method: CFunction, msg: symbol)
+.output ErrorMethod(CTADL_OUTPUT_DB_IO)
+
+ErrorInsn(insn, cat("Statement is a move and a call: ", insn)) :-
+    _Move(insn, _, _),
+    isMethodInvocation(insn).
+
+CInsn_Move(stmt, to_var, "", from_var, "") :-
+    _Move(stmt, to_var, from_var).
+
+// ---------------------------------------------------------------------------
+// fields & array accesses
+
+CField_Name(ap, fld),
+CNamespace_Parent(ap, cls),
+CisField(ap) :-
+    _InstanceField(cls, fld, type),
+    ap = MakeFieldAP(fld, type).
+
+CVar_Type(dst, ap, type),
+CInsn_Move(stmt, dst, ap, src, "") :-
+    _IPut(stmt, cls, fld, dst, src),
+    _InstanceField(cls, fld, type),
+    ap = MakeFieldAP(fld, type).
+
+CVar_Type(src, ap, type),
+CInsn_Move(stmt, dst, "", src, ap) :-
+    _IGet(stmt, cls, fld, dst, src),
+    _InstanceField(cls, fld, type),
+    ap = MakeFieldAP(fld, type).
+
+#ifdef ALL_OUTPUTS
+CTADLError(msg) :-
+    _IGet(_stmt, cls, fld, _dst, _src),
+    !_InstanceField(cls, fld, _),
+    msg = cat(cls, " ", fld, " found in IGet but has no InstanceField info").
+#endif
+
+CisAccessPath(ap),
+CInsn_Move(stmt, to_var, "", from_var, ap) :-
+  _AGet(stmt, index, to_var, from_var),
+  ap = MakeArrayAP(index).
+
+CisAccessPath(ap),
+CInsn_Move(stmt, to_var, ap, from_var, "") :-
+  _APut(stmt, index, to_var, from_var),
+  ap = MakeArrayAP(index).
+
+CInsn_Use(var, "") :-
+    _IfStmt(_, _, var, _, _, _);
+    _IfStmt(_, _, _, var, _, _).
+
+CInsn_isDataflowOnly(i) :- _PhiAssign(i, _, _).
+
+// possibly-compound ap of a chain of ap loads
+CisAccessPath(ap) :-
+    FieldLoadAP(_, _, ap).
+
+// includes IGet, SGet, and AGet
+.decl FieldLoadInstruction(stmt: CInsn, ap: CAccessPath, dst: CVar, src: CVar)
+FieldLoadInstruction(stmt, ap, dst, src) :-
+    _IGet(stmt, cls, fld, dst, src),
+    _InstanceField(cls, fld, type),
+    ap = MakeFieldAP(fld, type).
+
+FieldLoadInstruction(stmt, ap, dst, src) :-
+    _StaticGet(stmt, cls, fld, type, dst),
+    _StmtInMethod(stmt, _, method),
+    src = cat(method, "/", GlobalsParamName),
+    ap = MkGlobalField(cls, fld).
+
+FieldLoadInstruction(stmt, ap, dst, src) :-
+    _AGet(stmt, index, dst, src),
+    ap = MakeArrayAP(index).
+
+.decl FieldLoadAP(stmt: CInsn, base: CVar, ap: CAccessPath)
+
+FieldLoadAP(stmt, base, ap) :-
+    FieldLoadInstruction(stmt, ap, _, base).
+
+FieldLoadAP(stmt2, from_var1, cat(ap1, ap2)) :-
+    FieldLoadAP(stmt1, from_var1, ap1),
+    FieldLoadInstruction(stmt1, _, to_var1, _),
+    // second LOAD uses the stmt1 LOAD
+    FieldLoadInstruction(stmt2, ap2, to_var2, from_var2),
+    to_var1 = from_var2,
+
+    // same bb
+    _StmtInBasicblock(stmt1, bb),
+    _StmtInBasicblock(stmt2, bb),
+
+    // LOADs don't form a cycle
+    to_var2 != from_var1.
+
+// if there is a field access of array type, make a STAR ap for it
+CisAccessPath(ap) :-
+    _InstanceField(_, fld, type),
+    substr(type, 0, 1) = "[",
+    ap = cat(MakeFieldAP(fld, type), STAR).
+
+// want a way to talk about the contents of the array
+CInsn_Use(var, STAR) :-
+    _VarHasType(var, type),
+    substr(type, 0, 1) = "[".
+
+// ---------------------------------------------------------------------------
+// methods
+
+.decl isMethodInvocation(insn: CInsn)
+.decl isVirtualMethodInvocation(insn: CInsn)
+.decl isSuperMethodInvocation(insn: CInsn)
+.decl isStaticMethodInvocation(insn: CInsn)
+.decl MethodInvocation_Method(insn: CInsn, method: CFunction)
+.decl VirtualMethodInvocation_Base(insn: CInsn, var: CVar)
+
+.decl Method_DeclaringType(method: CFunction, cls: symbol)
+.decl Method_DefiningType(method: CFunction, cls: symbol)
+.decl Method_ReturnType(method: CFunction, return_ty: symbol)
+.decl Method_SimpleName(method: CFunction, name: symbol)
+.decl Method_Descriptor(method: CFunction, descriptor: symbol)
+
+// output Method_DeclaringType for use in sources/sinks, see android-sources-and-sinks.dl
+.output Method_DeclaringType(IO=sqlite, filename=QUOTE(CTADL_OUTPUT_DB))
+
+// namespaces are functions and types
+
+CisNamespace(x) :-
+    CisFunction(x);
+    CNamespace_Parent(x, _);
+    CNamespace_Parent(_, x).
+
+CNamespace_Parent(method, ty) :-
+    Method_DeclaringType(method, ty);
+    Method_DefiningType(method, ty).
+
+CNamespace_Parent(ty, super_ty) :-
+    CHA_DirectSubtype(ty, super_ty).
+
+CisFunction(method),
+CFunction_Name(method, simple_name),
+CFunction_Signature(method, descriptor),
+Method_SimpleName(method, simple_name),
+Method_DeclaringType(method, decl_ty),
+Method_ReturnType(method, return_type),
+Method_Descriptor(method, descriptor),
+CFunction_Arity(method, arity) :-
+    _Method(method, simple_name, decl_ty, return_type, descriptor, arity).
+
+CisFunction(method),
+CFunction_Name(method, name),
+CFunction_Signature(method, desc),
+Method_DefiningType(method, cls),
+Method_DeclaringType(method, cls),
+Method_SimpleName(method, name),
+Method_Descriptor(method, desc) :-
+    _MethodImplemented(cls, name, desc, method).
+
+CisFunction(method),
+CFunction_Name(method, name),
+CFunction_Signature(method, descriptor),
+Method_DeclaringType(method, decl_ty),
+isMethodInvocation(insn),
+MethodInvocation_Method(insn, method),
+Method_SimpleName(method, name),
+Method_Descriptor(method, descriptor) :-
+    _MethodInvocation(insn, method, JADX_FALSE, decl_ty, name, descriptor, _).
+
+CisFunction(method),
+CFunction_Name(method, name),
+CFunction_Signature(method, descriptor),
+Method_DeclaringType(method, decl_ty),
+isMethodInvocation(insn),
+MethodInvocation_Method(insn, method),
+Method_SimpleName(method, name),
+Method_Descriptor(method, descriptor) :-
+    _MethodInvocation(insn, method, JADX_TRUE, decl_ty, name, descriptor, _).
+
+isStaticMethodInvocation(insn) :-
+    _MethodInvocation(insn, _method, JADX_TRUE, _decl_ty, _name, _descriptor, invoke_type),
+    (invoke_type = "STATIC"; invoke_type = "DIRECT"; invoke_type = "CONSTRUCTOR"; invoke_type = "THIS").
+isVirtualMethodInvocation(insn) :-
+    _MethodInvocation(insn, _method, JADX_FALSE, _decl_ty, _name, _descriptor, invoke_type),
+    (invoke_type = "VIRTUAL"; invoke_type = "INTERFACE").
+isSuperMethodInvocation(insn) :-
+    _MethodInvocation(insn, _method, JADX_TRUE, _decl_ty, _name, _descriptor, invoke_type),
+    invoke_type = "SUPER".
+
+CCall_VirtualBase(insn, JADX_THIS_ARG_INDEX),
+VirtualMethodInvocation_Base(insn, base) :-
+    isVirtualMethodInvocation(insn),
+    _ActualParam(insn, JADX_THIS_ARG_INDEX, base).
+
+CVar_Type(var, "", type),
+CisAlloc(var, "", type) :-
+    _TypeInstance(_, var, type).
+
+#if 0
+Method_DeclaringType(method, cls),
+Method_SimpleName(method, name),
+Method_Descriptor(method, descriptor) :-
+    _MethodSignature(method, cls, name, descriptor).
+#endif
+
+CInsn_UnsuspiciousCall(insn, method) :-
+    isStaticMethodInvocation(insn),
+    MethodInvocation_Method(insn, method).
+
+// synthesize call edges to external methods
+CInsn_UnsuspiciousCall(call, method) :-
+    _ExternalMethod(method),
+    MethodInvocation_Method(call, method).
+
+// looks up super.<method> calls in the superclass
+CInsn_Call(insn, callee) :-
+    isSuperMethodInvocation(insn),
+    // Finds supertype of class insn is in
+    _StmtInMethod(insn, _, insn_method),
+    _Method(insn_method, _, decl_ty, _, _, _),
+    CHA_DirectSubtype(decl_ty, super_ty),
+
+    // Looks up callee signature in super_ty
+    MethodInvocation_Method(insn, method),
+    Method_SimpleName(method, name),
+    Method_Descriptor(method, descriptor),
+    CHA_SuperMethod(super_ty, name, descriptor, callee).
+
+CType_Subtype(subtype, supertype) :-
+    _DirectSuperclass(supertype, subtype);
+    _SuperInterface(supertype, subtype).
+
+CFunction_FormalParam(m, pos, param) :- _FormalParam(m, pos, param).
+
+CInsn_Move(insn, retparam, "", var, "") :-
+    _ReturnStmt(insn, var),
+    _StmtInMethod(insn, _, m),
+    _FormalParam(m, JADX_RET_ARG_INDEX, retparam).
+
+CCall_ActualParam(stmt, pos, param, "") :-
+  _ActualParam(stmt, pos, param).
+
+CCall_ActualParam(stmt, JADX_RET_ARG_INDEX, ret, "") :-
+  _MethodInvocationReturn(stmt, ret).
+
+CFunction_isFormalParamByRef(m, n) :- CFunction_FormalParam(m, n, p), _ThisParam(m, p).
+CFunction_isFormalParamByRef(m, JADX_RET_ARG_INDEX) :- CFunction_FormalParam(m, JADX_RET_ARG_INDEX, _).
+CFunction_isFormalParamByRef(m, n) :- CFunction_FormalParam(m, n, p), _VarHasType(p, t), !isPrimitiveType(t).
+
+.decl isPrimitiveType(t: symbol)
+isPrimitiveType(t) :-
+    t = "B"; t = "C"; t = "D"; t = "F"; t = "I"; t = "J"; t = "S"; t = "Z".
+
+CVar_Type(v, "", t) :-
+    _VarHasType(v, t).
+
+CInsn_InFunction(stmt, index, func) :-
+    _StmtInMethod(stmt, index, func),
+    ( CInsn_Move(stmt, _, _, _, _);
+      isMethodInvocation(stmt) ).
+CVar_InFunction(var, func) :- _VarInMethod(var, func).
+CVar_SourceInfo(var, SOURCE_INFO_NAME_KEY, name) :- _VarInMethod(var, _), _VarHasName(var, name).
+CVar_Name(var, name) :- _VarInMethod(var, _), _VarHasInternalName(var, name).
+
+// There's probably a bug in the fact generator. It emits a _VarInMethod that
+// doesn't have an internal name.
+CVar_Name(var, name) :- 
+    _VarInMethod(var, _),
+    !_VarHasInternalName(var, _),
+    name = cat("autovar", to_string(ord(var))).
+
+
+.decl CHA_ResolveCall(stmt: CInsn, id: CFunction)
+.decl CHA_DirectSubtype(a: symbol, b: symbol) inline
+// This method captures method overloading information for a class.
+// type - class
+// m = simple name
+// desc = parameter description
+// id: fully qualified function id
+.decl CHA_SuperMethod(type: symbol, m: symbol, desc: symbol, id: CFunction)
+// a is a subtype of b
+.decl CHA_Subtype(a: symbol, b: symbol)
+
+// class hierarchy
+CHA_DirectSubtype(sub, super) :- _DirectSuperclass(super, sub).
+// when b is an interface, classes that implement it
+CHA_DirectSubtype(cls, iface) :-
+    _SuperInterface(iface, cls),
+    !_InterfaceType(cls).
+
+CHA_Subtype(a, b) :- CHA_DirectSubtype(a, b).
+CHA_Subtype(a, b) :- CHA_Subtype(a, c), CHA_DirectSubtype(c, b).
+
+CHA_SuperMethod(c, m, desc, id) :- _MethodImplemented(c, m, desc, id).
+CHA_SuperMethod(c, m, desc, id) :-
+    CHA_SuperMethod(c2, m, desc, id),
+    CHA_DirectSubtype(c, c2),
+    !_MethodImplemented(c, m, desc, _).
+
+#define CHA_HierarchyType(var_type, ty) \
+    (var_type=ty; CHA_Subtype(ty, var_type))
+
+//CHA_ResolveCall(insn, id) :-
+//    isVirtualMethodInvocation(insn),
+//    VirtualMethodInvocation_Base(insn, base),
+//    _VarHasType(base, base_type),
+//    CHA_HierarchyType(base_type, base_subtype),
+//    MethodInvocation_Method(insn, m),
+//    Method_SimpleName(m, name),
+//    Method_Descriptor(m, descriptor),
+//    CHA_SuperMethod(base_subtype, name, descriptor, id).
+
+#ifdef CTADL_ENABLE_HYBRID_INLINING
+// hybrid inlining method resolution
+IndirectCallResolventFunction(s, ty, funcref) :-
+    // hi determined that indirect call s flows from type ty
+    IndirectCallResolvent(_, s, ty),
+    MethodInvocation_Method(s, method),
+    Method_SimpleName(method, simple_name),
+    Method_Descriptor(method, descriptor),
+    CHA_SuperMethod(ty, simple_name, descriptor, funcref).
+#endif // CTADL_ENABLE_HYBRID_INLINING
+
+
+#ifdef ALL_OUTPUTS
+//.output FieldOrArrayAccess(CTADL_OUTPUT_DB_IO)
+//.output RegularMove(CTADL_OUTPUT_DB_IO)
+//.output FieldStoreMove(CTADL_OUTPUT_DB_IO)
+//.output FieldLoadMove(CTADL_OUTPUT_DB_IO)
+.output FieldLoadInstruction(CTADL_OUTPUT_DB_IO)
+.output FieldLoadAP(CTADL_OUTPUT_DB_IO)
+.output CHA_SuperMethod(CTADL_OUTPUT_DB_IO)
+
+ErrorMethod(method, msg) :-
+    isVirtualMethodInvocation(insn),
+    MethodInvocation_Method(insn, method),
+    !CisFunction(method),
+    msg = cat(insn, " virtual-invokes method that doesn't exist").
+
+ErrorMethod(method, msg) :-
+    isVirtualMethodInvocation(insn),
+    MethodInvocation_Method(insn, method),
+    (!Method_SimpleName(method, _); !Method_Descriptor(method, _); !Method_DeclaringType(method, _)),
+    msg = cat(insn, " virtual-invokes method with no signature").
+
+ErrorMethod(method, msg) :-
+    isStaticMethodInvocation(insn),
+    MethodInvocation_Method(insn, method),
+    !CisFunction(method),
+    msg = cat(insn, " static-invokes method that doesn't exist").
+
+ErrorMethod(method, msg) :-
+    CisFunction(method),
+    _MethodImplemented(_, method, _, _),
+    !CFunction_Arity(method, _),
+    msg = cat(method, " has no arity").
+
+.decl CheckArity(method: symbol, good: number)
+
+CheckArity(method, 0) :- CFunction_Arity(method, 0).
+
+CheckArity(method, 1) :-
+    CFunction_Arity(method, n),
+    n > 0,
+    CFunction_FormalParam(method, 0, _).
+
+CheckArity(method, i+1) :-
+    CheckArity(method, i),
+    CFunction_Arity(method, n),
+    i < n,
+    CFunction_FormalParam(method, i, _).
+
+ErrorMethod(method, msg) :-
+    CFunction_Arity(method, n),
+    !CheckArity(method, n),
+    msg = cat("arity ", to_string(n), " missing formal param").
+#endif
+
+
+// Handle some specific configurations from the models
+// This handles forward_self, which models a call by forwarding it to some
+// other method on the same type
+CInsn_Call(call_site, to_func) :-
+    MG_ForwardSelf(fromid, toid),
+    MG_FuncEval(fromid,  from_func),
+    MethodInvocation_Method(call_site, from_func),
+    VirtualMethodInvocation_Base(call_site, var),
+    (_VarHasType(var, ty); CisAlloc(var, "", ty)),
+    CHA_SuperMethod(ty, _, _, to_func),
+    MG_FuncEval(toid, to_func).
+
+IndirectCallResolventFunction(s, ty, forwardfunc) :-
+    IndirectCallResolvent(_, s, ty),
+    ForwardIndirectCallsite(_, s, nodeid),
+    MG_ForwardCall(nodeid, _, forwardid, _, _, _),
+    // Choose resolvent funcs from matching constraint
+    MG_FuncEval(forwardid, forwardfunc),
+    CHA_SuperMethod(ty, _, _, forwardfunc).
+
+// pass the new virtual base as "this" to the call
+CCall_ActualParam(fwdsite, 0, baseparam, baseap) :-
+    ForwardIndirectCallsite(origsite, fwdsite, nodeid),
+    MG_ForwardCall(nodeid, _, _, _, baseindex, _),
+    CCall_ActualParam(origsite, baseindex, baseparam, baseap).
+
+CCall_ActualParam(fwdsite, index, param, ap) :-
+    ForwardIndirectCallsite(origsite, fwdsite, nodeid),
+    CCall_ActualParam(origsite, index, param, ap),
+    CGlobalParameter(index).
+
+CCall_VirtualBase(fwdsite, 0) :-
+    ForwardIndirectCallsite(_, fwdsite, nodeid).
+
+IntCInsn_InFunction(fwdsite, index, func) :-
+    ForwardIndirectCallsite(callsite, fwdsite, _),
+    _StmtInMethod(callsite, index, func).
+
+// XXX Technically just copy the actuals that are in matching funcs or something
+
+.decl ForwardIndirectCallsite(callsite: symbol, forwardsite: symbol, nodeid: symbol)
+.output ForwardIndirectCallsite(CTADL_OUTPUT_DB_IO)
+
+ForwardIndirectCallsite(callsite, forward_callsite, nodeid) :-
+    MG_ForwardCall(nodeid, targetid, forwardid, isdirect, index, _),
+    MG_FuncEval(targetid, targetfunc),
+    MethodInvocation_Method(callsite, targetfunc),
+    isdirect = 0,
+    forward_callsite = cat(callsite,"/forward_call").
+
+// Mocks an object of type ty inside func. ID must be unique but is otherwise
+// arbitrary. This is commonly used to mock an object that is created by the
+// runtime or by otherwise unavailable library code, like for processing Android
+// Intents.
+.decl MockObject(id: symbol, ty: symbol, func: CFunction)
+
+// We need to generate code to call the constructor for the given type. We just
+// call any method called "<init>" and we don't give it any arguments except the
+// "this" argument, argument 0.
+CInsn_InFunction(insn, 0, infunc),
+CCall_ActualParam(insn, JADX_THIS_ARG_INDEX, thisvar, ""),
+CCall_ActualParam(insn, globals_index, globals_param, ""),
+CInsn_Call(insn, initfunc),
+CisAlloc(thisvar, "", obj) :-
+    MockObject(id, obj, infunc),
+    insn = cat(infunc, "/", id, "/mock-constr"),
+    CFunction_FormalParam(infunc, JADX_THIS_ARG_INDEX, thisvar),
+    CGlobalParameter(globals_index),
+    CFunction_FormalParam(infunc, globals_index, globals_param),
+    CHA_SuperMethod(obj, "<init>", _, initfunc).
+
+CSourceInfo_Location(insn, file_id, region_id) :-
+    MockObject(id, obj, infunc),
+    insn = cat(infunc, "/", id, "/mock-constr"),
+    CInsn_InFunction(insn0, 0, infunc),
+    CSourceInfo_Location(insn0, file_id, region_id).
+
+//MockObject("mock-AppReceiver-onReceive", "Lcom/android/traceur/AppReceiver;", "Lcom/android/traceur/AppReceiver;.onReceive:(Landroid/content/Context;Landroid/content/Intent;)V").
+
+MockObject(obj_id, class_id, method_id) :-
+    _ManifestNode(recv_id, "receiver"),
+    _ManifestNodeAttr(recv_id, "android:name", aname),
+    class_id = @AndroidManifestClassId(aname),
+    CHA_SuperMethod(class_id, "onReceive", _, method_id),
+    obj_id = cat("mock-receiver:", class_id).
+
+MockObject(obj_id, class_id, method_id) :-
+    _ManifestNode(service_id, "service"),
+    _ManifestNodeAttr(service_id, "android:name", aname),
+    class_id = @AndroidManifestClassId(aname),
+    CHA_SuperMethod(class_id, "onHandleIntent", _, method_id),
+    obj_id = cat("mock-service:", class_id).
+
+#ifdef ALL_OUTPUTS
+.output VirtualMethodInvocation_Base(CTADL_OUTPUT_DB_IO)
+.output MockObject(CTADL_OUTPUT_DB_IO)
+#endif

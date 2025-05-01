@@ -1,0 +1,86 @@
+#define CTADL_ENABLE_HYBRID_INLINING
+#define CTADL_HYBRID_CHA_THRESHOLD 1
+
+#include "ctadl_schema.dl"
+#include "config.dl"
+#include "jadx/jadx_lang.dl"
+#ifdef CTADL_IMPORT_LANG_FACTS_FROM_DB
+#include "jadx/importdb.dl"
+#else
+#include "jadx/jadx-fact-imports.dl"
+#endif
+
+
+CTADLConfig("CTADL_ANALYSIS_LANG", "JADX").
+
+#include "graph/declarations.dl"
+#ifndef CTADL_DISABLE_INDEX_PHASE
+#include "android-intents.dl"
+
+// ---------------------------------------------------------------------------
+// phase 1
+
+#include "graph/dataflow_graph.dl"
+
+.init ctadl_jadx_phase1 = CGraphRules
+
+// hybrid call graph:
+/* .decl CInsn_UnsuspiciousCall(insn: CInsn, fid: CFunction) */
+
+CallEdge(insn, fid, "") :- CInsn_UnsuspiciousCall(insn, fid).
+
+CInsn_Call(insn, fid) :- CHA_ResolveCall(insn, fid), EnableClassHierarchyAnalysis().
+
+// (1) use CHA when it has precise edges
+CInsn_UnsuspiciousCall(insn, id) :-
+    hasExactlyOneCHAEdge(insn),
+    CHA_ResolveCall(insn, id).
+
+// models
+//#include "analysis/jadx/models.dl"
+//#include "analysis/jadx/android-models.dl"
+
+// ---------------------------------------------------------------------------
+// track flow of alloc'd types
+
+#define FS_VirtualAssignPlan .plan 1: (2, 1)
+#include "graph/slice/callee.dl"
+
+.init track_alloc = SliceCallee
+CTADLStats("track_alloc.Reachable", n) :- n = count : { track_alloc.ReachableVertex(_, _, _, _) }.
+
+track_alloc.input_.StartVertex(v, p, ty) :-
+    VirtualAlloc(v, p, ty, ""),
+    EnableContextFreeObjectTracking().
+
+// (2) flow types of allocations to resolve methods
+CallEdge(insn, id, "") :-
+    track_alloc.isReachable(var, "", ty),
+    VirtualMethodInvocation_Base(insn, var),
+    !hasExactlyOneCHAEdge(insn),
+    MethodInvocation_Method(insn, method),
+    Method_SimpleName(method, simple_name),
+    Method_Descriptor(method, descriptor),
+    CHA_SuperMethod(ty, simple_name, descriptor, id),
+    EnableContextFreeObjectTracking().
+
+.decl hasExactlyOneCHAEdge(insn: CInsn)
+hasExactlyOneCHAEdge(stmt) :-
+    VirtualMethodInvocation_Base(stmt, _),
+    CTADL_HYBRID_CHA_THRESHOLD = count : { CHA_ResolveCall(stmt, _) }.
+
+#ifdef ALL_OUTPUTS
+//.output track_alloc.ReachableVertex(CTADL_OUTPUT_DB_IO)
+#endif
+
+#endif // CTADL_DISABLE_INDEX_PHASE
+
+// ---------------------------------------------------------------------------
+// output
+
+#include <export.dl>
+#include <jadx/export.dl>
+
+// suppress-warnings needs to be given exactly once at the top-level because
+// souffle overrides previous pragmas with the last pragma
+.pragma "suppress-warnings" "track_intent.tracker.input_.SanitizeAssign,ErrorMethod,track_alloc.input_.SanitizeAssign,ClassObjectToClassName,CFunction_SourceInfo,CVar_SourceInfo"

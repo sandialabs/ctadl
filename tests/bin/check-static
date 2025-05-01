@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+
+top="$(git rev-parse --show-toplevel)"
+
+pyright
+
+black --check src bin/ctadl bin/dctadl

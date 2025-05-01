@@ -1,0 +1,9 @@
+// aliasing summary rule can capture things even without alias moves
+def f(p1, p2, p3) {
+    l = p1;
+    l.foo = p2;
+
+    z = p1;
+    w = p3;
+    z.foo = w.bar;
+}

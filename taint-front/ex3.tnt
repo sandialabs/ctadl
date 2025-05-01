@@ -1,0 +1,13 @@
+def Main() {
+  x.bar = source(Network);
+  r = A(x, y);
+  sink(y.foo, Network);
+}
+
+def A(ain, aout) {
+  r = B(ain, aout);
+}
+
+def B(bin, bout) {
+  bout.foo = bin.bar;
+}

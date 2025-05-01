@@ -1,0 +1,23 @@
+{
+  "VirtualAssign": {
+    "includes": [{
+      "insn": "Main/call/1",
+      "v1": "Main/tmp",
+      "v2": "Main/x",
+      "ctx": ""
+    }, {
+    "v1": "H/tmp1",
+    "v2": "H/x",
+    "ctx": "G#F#Main#"
+    },{
+    "v1": "H/tmp2",
+    "v2": "H/tmp1",
+    "ctx": "G#F#Main#"
+    },{
+    "v1": "H/tmp3",
+    "v2": "H/tmp2",
+    "ctx": ""
+    }],
+    "excludes": []
+  }
+}

@@ -1,0 +1,15 @@
+def f() {
+  tmp = source(Network);
+  return tmp;
+}
+
+def g(c1) {
+  tmp = c1.func();
+  return tmp;
+}
+
+def Main() {
+  p.func = f;
+  x = g(p);
+  sink(x, Network);
+}

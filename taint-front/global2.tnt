@@ -1,0 +1,21 @@
+var global;
+
+def id(x) {
+  return x;
+}
+
+def A(x) {
+  tmp = id(x);
+  global = tmp;
+}
+
+def B() {
+  return global;
+}
+
+def Main() {
+  s = source(File);
+  A(s);
+  t = B();
+  sink(t, File);
+}

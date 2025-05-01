@@ -1,0 +1,14 @@
+def foo(x) {
+  z=bar(x.y);
+  w = z;
+  baz(w);
+}
+
+def bar(x) {
+  x.z = source(Network);
+  return x;
+}
+
+def baz(x) {
+  sink(x.z, Network);
+}

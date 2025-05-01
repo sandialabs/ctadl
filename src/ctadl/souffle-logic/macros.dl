@@ -1,0 +1,29 @@
+#pragma once
+
+// used to quote the name of the input and output dbs
+#define Q(x) #x
+#define QUOTE(x) Q(x)
+
+// .output Relation(CTADL_OUTPUT_DB_IO)
+#define CTADL_OUTPUT_DB_IO IO=sqlite, filename=QUOTE(CTADL_OUTPUT_DB)
+// .input Relation(CTADL_INPUT_DB_IO)
+#define CTADL_INPUT_DB_IO IO=sqlite, filename=QUOTE(CTADL_INPUT_DB)
+
+// At least x or y must be empty
+// "one empty" cat()
+#define oecat(out, x, y) \
+    (x = "", out = y; y = "", out = x)
+
+// Precondition:
+// tainted in ctx c1
+// edge in c2
+// output: tainted context ctx0
+// I wrote this this way because I think it will have more efficient joins.
+// Most of the rows will fall under the first three constraints, where we don't
+// have to call the functor.
+#define call_string_taint_constraint(ctx0, ctx1, ctx2) \
+    (   ctx1 = "", ctx2 = "", ctx0 = ""; \
+        ctx1 = "", ctx2 != "", ctx0 = ctx2; \
+        ctx2 = "", ctx1 != "", ctx0 = ctx1; \
+        ctx1 = ctx2, ctx0 = ctx1; \
+        ctx1 != ctx2, ctx1 != "", ctx2 != "", 1 = @CallStringUnder(ctx2, ctx1), ctx0 = ctx1)

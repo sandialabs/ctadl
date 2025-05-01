@@ -1,0 +1,78 @@
+// alloc summaries
+// ---------------------------------------------------------------------------
+
+
+InitialVertex(v, p),
+VirtualAlloc(v, p, obj, "") :-
+    CisAlloc(v, p, obj).
+
+Vertex(v, p) :-
+    VirtualAlloc( v, p, _, _).
+
+//VirtualAlloc(var, ap, obj, "") :-
+//    SummaryAlloc(f, n, summary_ap, obj, ""),
+//    CallEdge(insn, f, ""),
+//    CCall_ActualParam(insn, n, var, actual_ap),
+//    ap = cat(actual_ap, summary_ap),
+//    isComputedAccessPath(ap).
+// Applying an Alloc summary
+VirtualAlloc(var, ap, obj, "") :-
+    SummaryAlloc(f, n, summary_ap, obj, ""),
+    CallEdge(insn, f, ""),
+    CCall_ActualParam(insn, n, var, actual_ap),
+    // One of the APs is empty
+    (summary_ap = ""; actual_ap = ""),
+    oecat(ap, actual_ap, summary_ap).
+.plan 1: (2, 1, 3)
+VirtualAlloc(var, ap, obj, "") :-
+    SummaryAlloc(f, n, summary_ap, obj, ""),
+    CallEdge(insn, f, ""),
+    CCall_ActualParam(insn, n, var, actual_ap),
+    // Both APs nonempty
+    ComputedAccessPathNonEmptySplit(ap, actual_ap, summary_ap).
+.plan 1: (2, 1, 3, 4), 2: (4, 1, 2, 3)
+
+LocallyReachable_Root(v, p) :-
+    VirtualAlloc(v, p, _, _).
+
+
+// The next three rules are really four, if you remove all disjunctions.
+// Originally they were one rule. I split the into three so I could write
+// plans.
+SummaryAlloc(f, n, p, obj, ctx0) :-
+    VirtualAlloc(v_obj, p_obj, obj, ctx1),
+    LocallyReachable(param, p, v_obj, p_obj, ctx2),
+    CFunction_FormalParam(f, n, param),
+    CFunction_isFormalParamByRef(f, n),
+    (   ctx1 = "", ctx0 = ctx2
+    ;   1 = @CallStringUnder(ctx2, ctx1), ctx0 = ctx1),
+    !DisableGlobalDataFlow().
+.plan 1: (2, 1, 3, 4)
+
+SummaryAlloc(f, n, p, obj, ctx0) :-
+    VirtualAlloc(v_obj, p_obj, obj, ctx1),
+    LocallyReachable(param, p, v_obj, p_obj, ctx2),
+    CFunction_FormalParam(f, n, param),
+    p != "",
+    (   ctx1 = "", ctx0 = ctx2
+    ;   1 = @CallStringUnder(ctx2, ctx1), ctx0 = ctx1),
+    !DisableGlobalDataFlow().
+.plan 1: (2, 1, 3)
+
+SummaryAlloc(f, n, p, obj, ctx) :-
+    VirtualAlloc(v_obj, p_obj, obj, ctx),
+    param = v_obj, p = p_obj,
+    CFunction_FormalParam(f, n, param),
+    (p != ""; CFunction_isFormalParamByRef(f, n)),
+    !DisableGlobalDataFlow().
+
+// alias rule for alloc summaries
+SummaryAlloc(f, n, p13, obj, ctx) :-
+    VirtualAlloc(v2, p23, obj, ctx),
+    AliasedBy(formal, p1, v2, p2, ""),
+    MatchComputedPrefix(p23, p2, p3),
+    p13 = cat(p1, p3),
+    isComputedAccessPath(p13),
+    CFunction_FormalParam(f, n, formal),
+    (p13 != ""; CFunction_isFormalParamByRef(f, n)),
+    !DisableGlobalDataFlow().

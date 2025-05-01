@@ -1,0 +1,32 @@
+diff --git a/src/interpreter/Engine.cpp b/src/interpreter/Engine.cpp
+index 2396c4090..c824feac3 100644
+--- a/src/interpreter/Engine.cpp
++++ b/src/interpreter/Engine.cpp
+@@ -744,8 +744,8 @@ RamDomain Engine::execute(const Node* node, Context& ctxt) {
+                     try {
+                         sub_str = str.substr(idx, len);
+                     } catch (...) {
+-                        std::cerr << "warning: wrong index position provided by substr(\"";
+-                        std::cerr << str << "\"," << (int32_t)idx << "," << (int32_t)len << ") functor.\n";
++                        // std::cerr << "warning: wrong index position provided by substr(\"";
++                        // std::cerr << str << "\"," << (int32_t)idx << "," << (int32_t)len << ") functor.\n";
+                     }
+                     return getSymbolTable().encode(sub_str);
+                 }
+diff --git a/src/synthesiser/Synthesiser.cpp b/src/synthesiser/Synthesiser.cpp
+index 563066db1..8a3a16298 100644
+--- a/src/synthesiser/Synthesiser.cpp
++++ b/src/synthesiser/Synthesiser.cpp
+@@ -2709,9 +2709,9 @@ void Synthesiser::generateCode(std::ostream& sos, const std::string& id, bool& w
+           "len) {\n";
+     os << "   std::string result; \n";
+     os << "   try { result = str.substr(idx,len); } catch(...) { \n";
+-    os << "     std::cerr << \"warning: wrong index position provided by substr(\\\"\";\n";
+-    os << "     std::cerr << str << \"\\\",\" << (int32_t)idx << \",\" << (int32_t)len << \") "
+-          "functor.\\n\";\n";
++    // os << "     std::cerr << \"warning: wrong index position provided by substr(\\\"\";\n";
++    // os << "     std::cerr << str << \"\\\",\" << (int32_t)idx << \",\" << (int32_t)len << \") "
++    //       "functor.\\n\";\n";
+     os << "   } return result;\n";
+     os << "}\n";
+ 

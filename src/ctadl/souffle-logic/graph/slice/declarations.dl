@@ -1,0 +1,7 @@
+#pragma once
+
+#define FORWARD_SLICE_INTRA_EDGE 1
+#define FORWARD_SLICE_CALL_EDGE 2
+#define FORWARD_SLICE_RETURN_EDGE 3
+
+#define SLICE_EMPTY_TAG ""

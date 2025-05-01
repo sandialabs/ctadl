@@ -1,0 +1,7 @@
+#define GlobalsParamName "<globals>"
+#define TaintFront_MkVar(fid, vin, vout, pout) \
+    ( Global(vin, _), vout = cat(fid, "/", GlobalsParamName), fid=fid, pout = cat(".", vin); \
+      !Global(vin, _), vout = cat(fid, "/", vin), pout = "" )
+#define TaintFront_MkStmt(fid, ty, id) cat(fid, "/", ty, "/", id)
+
+

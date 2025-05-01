@@ -1,0 +1,57 @@
+def polyY(obj) {
+  return obj;
+}
+
+def polyZAlloc() {}
+
+def polyZ(obj) {
+  tmp = source(Alloc14);
+  tmp = polyZAlloc;
+  return tmp;
+}
+
+def id(x) {
+  tv = x;
+  return tv;
+}
+
+def foo(x, obj) {
+  tx = id(x);
+  // Indirect call.
+  // When called from bar1, calls polyY
+  // When called from bar2, calls polyZ
+  tmp = tx.poly(obj);
+  return tmp;
+}
+
+def mid(x, obj) {
+  tmp = foo(x, obj);
+  return tmp;
+}
+
+def bar1(obj) {
+  y = source(Alloc31);
+  y.poly = polyY;
+  tmp = mid(y, obj);
+  return tmp;
+}
+
+def bar2(obj) {
+  z = source(Alloc34);
+  z.poly = polyZ;
+  tmp = mid(z, obj);
+  return tmp;
+}
+
+def serviceFirst() {}
+def service() {
+  first = source(Alloc37);
+  first = serviceFirst;
+  second = bar1(first);
+  third = bar2(first);
+  // assert(first == second);
+  sink(second, EqualToAlloc37);
+  // assert(first != third);
+  sink(third, NotEqualToAlloc37);
+}
+

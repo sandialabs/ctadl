@@ -1,0 +1,11 @@
+def func(a, b) {
+  sink(b.f, Bad);
+}
+
+def Main() {
+  x.f = source(File);
+  func(x, y);
+
+  z = zz;
+  func(z, zz);
+}

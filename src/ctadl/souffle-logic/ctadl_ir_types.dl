@@ -1,0 +1,18 @@
+#pragma once
+
+#include "macros.dl"
+
+.type CAccessPath = symbol
+.type CVar = symbol
+.type CFunction = symbol
+.type CInsn = symbol
+.type CFunctionInvocation = symbol // XXX remove
+
+// for handling call-return matching
+.type FS_ParenMatch = symbol // "call" or "nocall"
+
+.type SliceLabelType = symbol
+
+.decl SanitizeAssign(
+    v1: CVar, p1: CAccessPath, v2: CVar, p2: CAccessPath
+)

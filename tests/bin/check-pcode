@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+
+set -e
+set -o pipefail
+set -x
+
+CHECKSARIF="checksarif -o sarif-validation-log.sarif --log ForceOverwrite --max-file-size-in-kb $((500*1024))"
+top="$(git rev-parse --show-toplevel)"
+outdir="$top/ctadl-test-output"
+cd $outdir
+
+ctadl import pcode $(nix build --inputs-from . nixpkgs#curl --no-link --json | jq -r ".[0].outputs.bin")/bin/curl -o pcode_curl_facts -f
+ctadl index -f pcode_curl_facts
+ctadl query --format=sarif > curl.pcode.sarif
+$CHECKSARIF curl.pcode.sarif
+mv -f ctadlir.db pcodeir.db
+rm -rf pcode_curl_facts
+
+nginx=$(nix build .#nginx-debug --print-out-paths --no-link)
+ctadl import pcode $nginx/bin/nginx -o out/nginx-pcode -f
+ctadl --dir out/nginx-pcode index -f
+XDG_DATA_HOME=out/nginx-pcode ctadl --dir out/nginx-pcode query --dl $top/tests/query_nginx.dl --compute-slice fwd --format summary > out/nginx-pcode/summary.txt
+n_nginx_results=$(grep 'forward source-slice' out/nginx-pcode/summary.txt | awk '{print $1}')
+[[ $n_nginx_results -gt 10 ]]
+rm -rf out/nginx-pcode

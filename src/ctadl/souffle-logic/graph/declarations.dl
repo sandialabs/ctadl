@@ -1,0 +1,50 @@
+#pragma once
+
+#include <graph_schema.dl>
+
+// Derived access path. We add access paths due to the way the analysis is
+// configured.
+.decl isComputedAccessPath(ap: CAccessPath)
+
+// aliasing is subset based. we start from a target and add to it all the
+// included things, recursively. a target will be one for which results are
+// calculated in AliasedBy. this is populated elsewhere in the analysis.
+.decl AliasedBy_Target(target: CVar)
+
+// target aliased by alias, i.e., alias is aliased to target, i.e., alias =
+// target happened so writes to alias may also write to target.
+.decl AliasedBy(targetv: CVar, targetp: CAccessPath, aliasv: CVar, aliasp: CAccessPath, ctx: symbol)
+choice-domain (targetv, targetp, aliasv, aliasp)
+
+.decl IntraObjectAliasedBy(targetv: CVar, f: CAccessPath, g: CAccessPath, ctx: symbol)
+choice-domain (targetv, f, g)
+.output IntraObjectAliasedBy(CTADL_OUTPUT_DB_IO)
+
+// Empty call string ""
+.functor NewCallString(): symbol stateful
+// If two call strings are comparable and s1 is more specific than s2, that is
+// everything from s2 applies to s1, then this returns 1.
+.functor CallStringLte(s1: symbol, s2: symbol): number
+.functor CallStringUnder(s1: symbol, s2: symbol): number
+// Returns 1 if call string has at least one frame
+.functor CallStringNonEmpty(s: symbol): number
+// Returns the number of frames in the call string
+.functor CallStringSize(s: symbol): number
+// Returns the top frame of the call string. Precondition: there is at least
+// one frame in the call string
+.functor TopFrame(stack: symbol): symbol stateful
+// Pushes a frame onto the call string
+.functor PushFrame(func: symbol, stack: symbol): symbol stateful
+// Pushes a new frame onto the call string. The resulting call string keeps the
+// top K (at most) frames of the new call string.
+.functor PushFrameK(func: symbol, stack: symbol, k: number): symbol stateful
+// Pops the top frame from the call string
+.functor PopFrame(dst:symbol):symbol stateful
+.functor AccessPathCycle(ap:symbol): number
+.functor AccessPathSize(ap:symbol): number
+
+// Specialized functors
+.functor AndroidManifestClassId(manifest_name: symbol): symbol stateful
+
+
+.decl IntCInsn_InFunction(insn: symbol, index: number, function: symbol)

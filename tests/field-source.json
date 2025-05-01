@@ -1,0 +1,20 @@
+{
+  "model_generators": [
+    {
+      "find": "fields",
+      "where": [
+        {
+          "constraint": "signature_match",
+          "names": ["pid", "mimetypes"]
+        }
+      ],
+      "model": {
+        "sources": [
+          {
+            "kind": "Label"
+          }
+        ]
+      }
+    }
+  ]
+}
