@@ -92,7 +92,7 @@ Ensure that the installed binary, `taintfront`, is on your PATH.
 
 # Windows
 
-Although you may have better luck using a Mac system or a Linux system or VM (or wsl), we provide a release zip that contains a [Windows souffle binary](https://github.com/sandialabs/ctadl/releases/download/v0.10.1/souffle-windows-x64.zip) (to see how to build souffle yourself for Windows, see [souffle-build-windows](docs/souffle-build-windows.md)). There is a `souffle.bat` file in there that you use to run souffle.
+Although you may have better luck using a Mac system or a Linux system or VM (or wsl), we provide a release zip that contains a [Windows souffle binary](https://github.com/sandialabs/ctadl/releases/download/v0.11.0/souffle-windows-x64.zip) (to see how to build souffle yourself for Windows, see [souffle-build-windows](docs/souffle-build-windows.md)). There is a `souffle.bat` file in there that you use to run souffle.
 
 Python setup instructions:
 1) Install python3 for Windows (e.g. https://www.python.org/ftp/python/3.12.3/python-3.12.3-amd64.exe)
