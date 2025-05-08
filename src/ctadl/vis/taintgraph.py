@@ -4,13 +4,18 @@ Data structures and algorithms for efficiently exploring the underlying taint gr
 
 import logging
 import sqlite3
-from collections import Sized
+
+try:
+    from collections import Sized
+except ImportError:
+    from collections.abc import Sized
+
 from collections.abc import Collection, Iterable, Iterator
 from copy import copy
+from enum import Enum
 from itertools import chain
 from time import time
 from typing import NamedTuple, Optional, Union
-from enum import Enum
 
 import ctadl
 from ctadl.util.graph import BFS, AdjacencyGraph1, Search
