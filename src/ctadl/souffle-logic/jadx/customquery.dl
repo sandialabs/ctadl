@@ -1,67 +1,12 @@
+// Regular query but with all the JADX facts imported from the database.
+
 #include "information-flow/query.dl"
+#include "jadx-fact-decls.dl"
+#include "importdb.dl"
 
 
 // Bringing this in to resolve methods to specific classes
 // This is a jadx-only table at the moment!
 .decl Method_DeclaringType(method: CFunction, cls: symbol)
 .input Method_DeclaringType(IO=sqlite, filename=QUOTE(CTADL_INPUT_DB))
-
-// all functions with shortname "name" are taint sources
-.decl TaintSourceAllMethodName(taint:symbol, name:symbol)
-// all functions with shortname "name" are sinks
-.decl LeakingSinkAllMethodName(taint:symbol, name:symbol)
-// functions with shortname "name" in class "class" are taint sources
-.decl TaintSourceMethodNameInClass(taint:symbol, name:symbol, class:symbol)
-.decl TaintSourceMethodArgInClass(taint:symbol, nam:symbol, class:symbol, arg: number)
-// functions with shortname "name" in class "class" are sinks
-.decl LeakingSinkMethodNameInClass(taint:symbol, name:symbol, class:symbol)
-
-TaintSourceMethod(t, m) :-
-  TaintSourceAllMethodName(t, n),
-  CFunction_Name(m, n).
-
-LeakingSinkMethod(t, m) :-
-  LeakingSinkAllMethodName(t, n),
-  CFunction_Name(m, n).
-
-TaintSourceMethod(t, m) :-
-  TaintSourceMethodNameInClass(t, n, c),
-  CFunction_Name(m, n),
-  Method_DeclaringType(m, cat("L", c, ";")).
-
-TaintSourceVertex(t, formal, "") :-
-  TaintSourceMethodArgInClass(t, n, c, index),
-  CFunction_Name(m, n),
-  Method_DeclaringType(m, cat("L", c, ";")),
-  CFunction_FormalParam(m, index, formal).
-
-LeakingSinkMethod(t, m) :-
-  LeakingSinkMethodNameInClass(t, n, c),
-  CFunction_Name(m, n),
-  Method_DeclaringType(m, cat("L", c, ";")).
-
-// Add thing for "any class ending in Blah"
-// Can we replace / with . in datalog?
-// Maybe check if there is only one match?
-/* .output TaintSourceMethod */
-
-#define JADX_THIS_ARG_INDEX (0)
-#define JADX_RET_ARG_INDEX (-1)
-
-#define TaintSourceRet(label, method) \
-    TaintSourceMethodArg(label, JADX_RET_ARG_INDEX, method) :- \
-        CisFunction(method)
-
-#define TaintSinkArg(label, method, n) \
-    LeakingSinkMethodArg(label, n, method) :- \
-        CisFunction(method), \
-        CFunction_FormalParam(method, n, _)
-
-#define TaintTransfer_ArgToThis(method, arg) \
-    TaintTransferCallArg(call, JADX_THIS_ARG_INDEX, arg) :- \
-        CallEdge(call, method, "")
-
-#define TaintTransfer_ThisToRet(method) \
-    TaintTransferCallArg(call, JADX_RET_ARG_INDEX, JADX_THIS_ARG_INDEX) :- \
-        CallEdge(call, method, "")
 

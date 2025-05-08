@@ -19,7 +19,6 @@
 .input _StaticGet(CTADL_INPUT_DB_IO)
 .input _StaticPut(CTADL_INPUT_DB_IO)
 .input _StaticExternalField(CTADL_INPUT_DB_IO)
-.input _FieldAccess(CTADL_INPUT_DB_IO)
 .input _StmtInBasicblock(CTADL_INPUT_DB_IO)
 .input _IfStmt(CTADL_INPUT_DB_IO)
 .input _TernaryStmt(CTADL_INPUT_DB_IO)

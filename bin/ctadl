@@ -81,6 +81,7 @@ export_plugins = {
 compiled_indexers = {}
 compiled_query = None
 default_queries = {}
+custom_queries = {}
 compiled_match = None
 
 
@@ -531,7 +532,9 @@ def detect_query_config(
             status(f"SUT language: {language}", verb=1)
 
     src = None
-    if language in default_queries:
+    if args.dl and language in custom_queries:
+        src = custom_queries[language]
+    elif language in default_queries:
         src = default_queries[language]
     else:
         src = compiled_query
@@ -2215,7 +2218,7 @@ def make_argparser():
 
 def init_globals(ctx: contextlib.ExitStack):
     """Initializes some globals that depend on resources"""
-    global compiled_indexers, compiled_query, default_queries, compiled_match
+    global compiled_indexers, compiled_query, default_queries, custom_queries, compiled_match
 
     def rsf(r):
         return str(ctx.enter_context(resources.as_file(r)))
@@ -2251,6 +2254,22 @@ def init_globals(ctx: contextlib.ExitStack):
                 / "souffle-logic"
                 / "taint-front"
                 / "taintquery.dl"
+            ),
+        ),
+    }
+    custom_queries = {
+        "PCODE": DatalogSource(
+            lang="pcode",
+            bin=str(analysisdir / "pcode-query"),
+            src=rsf(
+                resources.files(ctadl) / "souffle-logic" / "pcode" / "taintquery.dl"
+            ),
+        ),
+        "JADX": DatalogSource(
+            lang="jadx",
+            bin=str(analysisdir / "jadx-query"),
+            src=rsf(
+                resources.files(ctadl) / "souffle-logic" / "jadx" / "customquery.dl"
             ),
         ),
     }
