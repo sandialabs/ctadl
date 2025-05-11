@@ -96,15 +96,9 @@ Although you may have better luck using a Mac system or a Linux system or VM (or
 
 Python setup instructions:
 1) Install python3 for Windows (e.g. https://www.python.org/ftp/python/3.12.3/python-3.12.3-amd64.exe)
-2) If you need to set pip proxy settings, add the following to `%APPDATA%/pip/pip.ini` (or whatever your pip setup is), creating the pip folder if needed (e.g. for Sandia proxy):
-```
-[global]
-proxy = http://proxy.sandia.gov:80
-trusted-host = pypi.org files.pythonhosted.org
-```
-3) Run `py -3 -m pip install setuptools`.
-4) In the ctadl repo, run `py -3 setup.py install --user`
-5) Run `py -3 bin\ctadl --help` to see if it worked
+2) Run `py -3 -m pip install setuptools`.
+3) In the ctadl repo, run `py -3 setup.py install --user`
+4) Run `py -3 bin\ctadl --help` to see if it worked
 
 See the above sections for further instructions, substituting the `ln -s` commands for `mklink /d` or similar or just copying things directly and using git for Windows if needed.
 
