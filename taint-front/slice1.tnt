@@ -1,13 +1,14 @@
 def call_source() {
   x = source(File);
+  y = x;
   return x;
 }
 
 def call_sink(x) {
-  sink(x, File);
+  sink(x.data, File);
 }
 
 def Main() {
-  x = call_source();
+  x.data = call_source();
   call_sink(x);
 }
