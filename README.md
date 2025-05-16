@@ -1,6 +1,6 @@
 # CTADL
 
-CTADL (pronounced "citadel" or mispronounced "see-taddle") is a static program slicer and taint analyzer.
+[CTADL](https://github.com/sandialabs/ctadl) (pronounced "citadel" or mispronounced "see-taddle") is a static program slicer and taint analyzer.
 
 It takes Java/Dex bytecode and Ghidra Pcode programs and allows you to query data flows inside and across procedures.
 CTADL &mdash; which stands for Compositional Taint Analysis in DataLog &mdash; is customizable, performant, and uses simple heuristics.
