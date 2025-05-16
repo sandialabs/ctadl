@@ -16,6 +16,6 @@ Afterward, if ctadl is installed, you can do:
 
 See `ctadl --help` for more detauls.
 
-Make sure, when you run ctadl, that Ghidra runs in your environment and that `GHIDRA_HOME` is set.
+Make sure, when you run ctadl, that [Ghidra](https://ghidra-sre.org) runs in your environment and that `GHIDRA_HOME` is set.
 If you forget, it'll remind you.
 

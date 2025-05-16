@@ -1902,7 +1902,7 @@ Note: if this command fails, see "What if 'import' fails?" below.
 Indexing constructs a global data flow graph. It produces a database, the SUT
 index.
 
-    $ ctadl --directory ./out/myapp index
+    $ ctadl --directory ./out/myapp index -v
     SUT import directory: './out/myapp'
     SUT language: JADX
     indexing [...]
