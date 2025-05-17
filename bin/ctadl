@@ -1857,7 +1857,7 @@ Strategies:
 
 
 _all_plugins_description = "\n".join(
-    f"- {name} {mod.version}"
+    f"* {name} {mod.version}"
     for name, mod in sorted(discovered_plugins.items(), key=lambda t: t[0])
 )
 ctadl_description = f"""
@@ -1870,8 +1870,9 @@ SARIF is the primary output format; SARIF can be easily loaded in VSCode to
 visualize taint results.
 
 To report CTADL problems and discuss use cases:
-    - https://github.com/sandialabs/ctadl/issues
-    - https://github.com/sandialabs/ctadl/discussions
+
+* https://github.com/sandialabs/ctadl/issues
+* https://github.com/sandialabs/ctadl/discussions
 
 The CTADL command-line interface is composed of a lot of subcommands. You can
 ask for help on any of these, e.g., `ctadl index --help`. CTADL uses a "working
@@ -1880,14 +1881,14 @@ current directory by default. Setting the `ctadl --directory <dir>` option, or
 setting the environment variable CTADL_DEFAULT_DIRECTORY, causes CTADL to
 switch to the given working directory before performing the subsequent command.
 
-The following gets you started with a simple workflow. We support more complex
-situations; see docs/workflows.md in the CTADL distribution.
+The following gets you started with a simple workflow. See the
+README or documentation for more options.
 
-<< Get started: step 0, import >>
+<<Get started: step 0, import>>
 
 Importing is the process of taking a raw system under test (SUT) and
 translating it into a form CTADL can consume. It produces a directory or
-database of SUT "facts."
+database of SUT "facts"::
 
     $ ctadl import jadx /path/to/myapp.apk -o out/myapp
     SUT imported to 'out/myapp'
@@ -1897,10 +1898,10 @@ See `ctadl import --help` for supported languages and more information.
 
 Note: if this command fails, see "What if 'import' fails?" below.
 
-<< Get started: step 1, index >>
+<<Get started: step 1, index>>
 
 Indexing constructs a global data flow graph. It produces a database, the SUT
-index.
+index::
 
     $ ctadl --directory ./out/myapp index -v
     SUT import directory: './out/myapp'
@@ -1913,14 +1914,14 @@ Indexing the SUT may take a while and there is no especially meaningful
 progress to report (CTADL does print some resource usage information). Keep an
 eye on your RAM.
 
-<< Get started: step 2, query >>
+<<Get started: step 2, query>>
 
 Step 2. Query the index with the 'query' command
 
 A query asks taint analysis questions of the SUT index. A query specifies a set
 of source nodes and sink nodes and answers the question, "Is there a path from
 any source to any sink?" Taint analysis answers are natively stored as graphs
-inside the index.
+inside the index::
 
     $ ctadl query [models.json]
     using index 'ctadlir.db'
@@ -1946,19 +1947,21 @@ workflows.
 Users often want to write their own queries. See 'ctadl query --help' and the
 tutorial.md for more information.
 
-<< What if 'import' fails? >>
+<<What if 'import' fails?>>
 
 CTADL uses a plugin architecture to discover SUT languages available to users.
 These are installed separately from CTADL. See INSTALL.md for info.
 
 Discovered plugins:
+
 {_all_plugins_description}
 
 CTADL pays attention to the following environment variables:
-- CTADL_DEFAULT_DIRECTORY: Directory CTADL switches to before an operation. See
+
+* CTADL_DEFAULT_DIRECTORY: Directory CTADL switches to before an operation. See
   also --directory.
-- SOUFFLE: Path to souffle binary.
-- CC, CXX, and CXXFLAGS: CC is used to find a preprocessor for analyses. CXX
+* SOUFFLE: Path to souffle binary.
+* CC, CXX, and CXXFLAGS: CC is used to find a preprocessor for analyses. CXX
   and CXXFLAGS used to compile analyses.
 """
 
@@ -1973,14 +1976,14 @@ variety of status messages to keep you apprised of what's going on under the
 hood. There are also a bunch of available options; the author has attempted to
 choose good defaults. The most commonly used are:
 
-    * -j N: Use N cores when indexing (by default, half the cores detected on this machine)
-    * -f: Overwrite the output filename, instead of erroring if it exists
+* -j N: Use N cores when indexing (by default, half the cores detected on this machine)
+* -f: Overwrite the output filename, instead of erroring if it exists
 
 The other options are analysis parameters that affect how particular SUT
 features are modeled, degrees of approximation, call graph resolution
 algorithms, etc.
 
-Examples:
+Examples::
 
     $ ctadl import myapp.apk -o myapp
     $ ctadl --directory myapp index
@@ -1988,7 +1991,7 @@ Examples:
 Indexes myapp and stores the index in 'ctadlir.db'.
 This is unfortunately *not* configurable due to the limitations of the Souffle
 Datalog engine. To optimize indexing, ensure that 'ctadlir.db' is not being
-written to over the network.
+written to over the network::
 
     $ ctadl --directory myapp index -j12 -f
 
@@ -2009,7 +2012,7 @@ Query results themselves are stored opaquely. A common way to visualize them is
 to use SARIF, with the --format=sarif option. SARIF can be opened in VSCode to
 understand which statements are tainted.
 
-Examples:
+Examples::
 
     $ ctadl query [models.json]
 
@@ -2017,11 +2020,12 @@ Runs the default query on 'ctadlir.db' and outputs a summary of the taint
 results found. The default taint query uses a set of sources and sinks specific
 to the language analyzed; it attempts to capture common types of interesting
 data, like HTTP or Database data. For instance, JADX programs have a set of
-Java and Android sources and sinks.
+Java and Android sources and sinks::
 
     $ ctadl query models.json --format sarif -o myapp-results.sarif
 
-models.json contains a list of model generators. Here is a simple example:
+models.json contains a list of model generators. Here is a simple
+example::
 
     { "model_generators": [{
       "find": "methods",
@@ -2045,7 +2049,7 @@ like finding instructions that use a certain field.
 
 This interface is experimental.
 
-Examples:
+Examples::
 
     $ ctadl match models.json
 
@@ -2053,7 +2057,7 @@ Runs the "find" matchers inside models.json and records the results in
 'ctadlir.db'. The results can be viewed using SARIF with the option `--format
 sarif`.
 
-models.json contains a list of model generators. Here is a simple example:
+models.json contains a list of model generators. Here is a simple example::
 
   { "model_generators": [
     {
@@ -2075,14 +2079,14 @@ useful things from the index. By default, prints a summary of the indexed code.
 
 Explanation of options:
 
---dump-summaries: After analyzing a library, it can be useful to dump all the
+* --dump-summaries: After analyzing a library, it can be useful to dump all the
 discovered summaries to be reused by another analysis. Use this option for
 that.
 
---dump-source-sink-models: This option dumps all the matched sources and sinks,
+* --dump-source-sink-models: This option dumps all the matched sources and sinks,
 as model generators.
 
---dump-models: Dump all models at once.
+* --dump-models: Dump all models at once.
 """
 
 
@@ -2159,10 +2163,10 @@ def make_argparser():
     )
 
     import_plugins_d = "\n".join(
-        f"        - {pformat(mod)}" for mod in import_plugins.values()
+        f"    - {pformat(mod)}" for mod in import_plugins.values()
     )
     export_plugins_d = "\n".join(
-        f"        - {pformat(mod)}" for mod in export_plugins.values()
+        f"    - {pformat(mod)}" for mod in export_plugins.values()
     )
     import_plugin_d = f"""
         Discovered plugins:

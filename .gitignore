@@ -14,4 +14,4 @@ lib/*
 *~
 *.sarif
 *.csv
-
+/docs/_build

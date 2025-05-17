@@ -221,6 +221,8 @@
               ps.jsonschema
               ps.psutil
               ps.pyjson5
+              ps.sphinx
+              ps.sphinx-argparse
               ctadlPackages.ctadl-plugins.taintfront
               ctadlPackages.ctadl-plugins.jadx
               ctadlPackages.ctadl-plugins.ghidra
@@ -238,6 +240,7 @@
             pkgs.jq
             pkgs.litecli
             pkgs.mcpp
+            bleeding.pandoc
             self.packages.${system}.taintfront
             checksarif
           ];
