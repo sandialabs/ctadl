@@ -36,3 +36,7 @@ The rest of the documentation is in the [docs](./docs) directory.
   If you update the compiler, then souffle needs to be updated and all our analyses need to be recompiled.
   After you rebuild and reinstall Souffle, remove the `$XDG_CONFIG_DIR/share/ctadl/analysis` directory.
   On Windows the share directory is instead under `%APPDATA%`.
+
+# Copyright
+
+Copyright 2025 National Technology & Engineering Solutions of Sandia, LLC (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S. Government retains certain rights in this software.
