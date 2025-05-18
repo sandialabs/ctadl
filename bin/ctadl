@@ -222,16 +222,6 @@ def collect_macros(args) -> list[Union[tuple[str, str], str]]:
         macros.append("CTADL_ENABLE_GLOBAL_FIELD_PROPAGATION")
     if "all_ap_splits" in args and args.all_ap_splits:
         macros.append("CTADL_USE_PREFIX_TABLE")
-    if "globals_strategy" in args:
-        if "ignore" == args.globals_strategy:
-            macros.append("CTADL_NO_GLOBAL_SUMMARIES")
-        elif "fastsummary" == args.globals_strategy:
-            pass
-        elif "param" == args.globals_strategy:
-            macros.append("CTADL_USE_GLOBAL_PARAM")
-            macros.append("CTADL_NO_GLOBAL_SUMMARIES")
-    if "global_summaries" in args and not args.global_summaries:
-        macros.append("CTADL_NO_GLOBAL_SUMMARIES")
     if "all_outputs" in args and args.all_outputs:
         macros.append("ALL_OUTPUTS")
     if (
@@ -1619,19 +1609,6 @@ def make_index_parser_options(parser):
         action="store_false",
         dest="star",
         help="Disables star abstraction (default: %(default)s)",
-    )
-    parser.add_argument(
-        "--globals-strategy",
-        metavar="<name>",
-        default="param",
-        choices=["fastsummary", "param", "ignore"],
-        help=textwrap.dedent(
-            """Strategy for handling global variables. (default %(default)s)
-
-    ignore - ignore globals
-    fastsummary - (less precise) summarize global effects context insensitively
-    param - (more precise) thread globals as a parameter through every function"""
-        ),
     )
     parser_add_argument_wrapper(
         parser,
