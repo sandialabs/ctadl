@@ -17,7 +17,6 @@ Welcome to CTADL's documentation!
    workflows
    models
    SARIF
-   cli_help
    analysis
    star
    windows
