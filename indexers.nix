@@ -48,7 +48,6 @@
     defaultMacros = [
       "CTADL_VERSION=${ctadl.version}"
       "CTADL_OUTPUT_DB=ctadlir.db"
-      "CTADL_USE_GLOBAL_PARAM"
       "CTADL_INPUT_DB=ctadlir.db"
     ];
     #finalMacros = lib.strings.concatStringsSep " " (defaultMacros ++ (datalogSpec.macros or []));
