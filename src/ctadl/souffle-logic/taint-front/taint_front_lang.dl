@@ -100,6 +100,7 @@ CisNamespace(fn) :- Function(fn, _).
 
 .decl GlobalParam(pos: number, name: symbol)
 
+CGlobalParameter(-3).
 GlobalParam(-3, GlobalsParamName) :- ReadsGlobal(_, _); WritesGlobal(_, _).
 
 CVar_InFunction(var, fn),
