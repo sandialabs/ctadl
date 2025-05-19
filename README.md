@@ -13,6 +13,8 @@ CTADL supports the languages:
 
 Its primary output format is [SARIF](https://sarifweb.azurewebsites.net), a results interchange format that enables VSCode visualization of taint analysis results.
 
+CTADL has flexible analysis options and supports a number of use cases. See the [documentation](https://ctadl.readthedocs.io/en/latest/) for detailed information.
+
 ## Compatibility
 
 CTADL works under MacOS, Linux, and Windows via Windows Subsystem for Linux (WSL). CTADL requires python 3.9 or later.
