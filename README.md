@@ -444,6 +444,7 @@ Queries can use Datalog and model generators at the same time.
 
 - File an issue: <https://github.com/sandialabs/ctadl/issues>
 - Ask a question: <https://github.com/sandialabs/ctadl/discussions>
+- Online documentation: <https://ctadl.readthedocs.io/en/latest/>
 
 <a id="known_issues_section"></a>
 ## Known issues
