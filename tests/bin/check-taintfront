@@ -6,49 +6,49 @@ set -x
 
 top="$(git rev-parse --show-toplevel)"
 outdir="$top/ctadl-test-output"
+testdir="$top/tests/taint-front"
 cd $outdir
 
-# Taintfront test
-taintfront $top/taint-front/global2.tnt
-ctadl index -vv -f facts
-ctadl query -vv --format=sarif > global2.sarif
-sarif_has_code_flows.py global2.sarif
+# Finds .tnt testcases and runs them.
+# If there is a corresponding .json file, we test the ctadlir against it
+# If there is a .codeflows file, we check for code flows
+# If there is a .nocodeflows file, we check for absence of code flows
+for f in $(ls -1 "$testdir"/*.tnt); do
+  testname="$(basename $f .tnt)"
+  echo "TAINT-FRONT TEST:" "$testname"
+  sarif_file="$outdir/$testname.sarif"
+  testcase_dir="$outdir/$testname"
+  ir_file="$testdir/$(basename $f .tnt).json"
+  flows_file="$testdir/$(basename $f .tnt).codeflows"
+  noflows_file="$testdir/$(basename $f .tnt).nocodeflows"
+  mkdir -p "$testcase_dir"
+  ctadl import taint-front "$f" -o "$testcase_dir" -f
+  ctadl --dir "$testcase_dir" index -f
+  ctadl --dir "$testcase_dir" query --format sarif -o "$sarif_file"
+  if [ -f "$ir_file" ]; then
+    ( cd "$testcase_dir" && python3 "$top/tests/test_ctadlir.py" "$ir_file" )
+  fi
+  if [ -f "$flows_file" ]; then
+    ( cd "$testcase_dir" && python3 "$top/tests/bin/sarif_has_code_flows.py" "$sarif_file" )
+  fi
+  if [ -f "$noflows_file" ]; then
+    ( cd "$testcase_dir" && ! python3 "$top/tests/bin/sarif_has_code_flows.py" "$sarif_file" )
+  fi
+done
+
 
 # Test --no-compile-analysis
-ctadl index -f --no-compile-analysis facts
-ctadl query --no-compile-analysis --format sarif -o global2.sarif
+ctadl --dir "$outdir/global2" index -f --no-compile-analysis
+ctadl --dir "$outdir/global2" query --no-compile-analysis --format sarif -o global2.sarif
 sarif_has_code_flows.py global2.sarif
 
-! ctadl index facts2 # index already exists
+! ctadl --dir "$outdir/global2" index # index already exists
 ! ctadl index -f facts2 # nonexistent facts dir
 rm -f ctadlir.db
 ! ctadl query # nonexistent index
 
 # Test without global data flow
-ctadl index -vv -f --no-interprocedural-data-flow facts
-ctadl export --format gml > global2.gml
-ctadl query --format sarif > global2.sarif
-! sarif_has_code_flows global2.sarif
-  
-
-taintfront $top/taint-front/compositional-ctx.tnt
-ctadl index -f facts
-python3 $top/tests/test_ctadlir.py $top/tests/taint_front_compositional_ctx.json
-
-taintfront $top/taint-front/compositional-ctx2.tnt
-ctadl index -f facts
-python3 $top/tests/test_ctadlir.py $top/tests/taint_front_compositional_ctx2.json
-
-taintfront $top/taint-front/compositional-ctx4.tnt
-ctadl index -f facts
-python3 $top/tests/test_ctadlir.py $top/tests/taint_front_compositional_ctx4.json
-
-taintfront $top/taint-front/indirect1.tnt
-ctadl index -f facts
-ctadl query
-python3 $top/tests/test_ctadlir.py $top/tests/taint_front_indirect1.json
-
-taintfront $top/taint-front/global1.tnt
-ctadl index -f facts
-ctadl query
-python3 $top/tests/test_ctadlir.py $top/tests/taint_front_global1.json
+ctadl --dir "$outdir/global2" index -vv -f --no-interprocedural-data-flow
+ctadl --dir "$outdir/global2" export --format gml -o global2.gml
+ctadl --dir "$outdir/global2" query --format sarif -o global2.sarif
+! python3 "$top/tests/bin/sarif_has_code_flows.py" "$outdir/global2/global2.sarif"
