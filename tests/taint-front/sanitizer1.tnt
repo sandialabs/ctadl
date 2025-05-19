@@ -4,10 +4,3 @@ def F() {
     z = y;
     sink(z, Network);
 }
-
-def G() {
-    x = source(Network);
-    y = x;
-    z = y;
-    sink(z, Network);
-}
