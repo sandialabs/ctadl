@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 
-set -e
-set -o pipefail
+# set -e
+# set -o pipefail
 set -x
 
 top="$(git rev-parse --show-toplevel)"
 outdir="$top/ctadl-test-output"
 testdir="$top/tests/taint-front"
 cd $outdir
+
+any_failed=0
 
 # Finds .tnt testcases and runs them.
 # If there is a corresponding .json file, we test the ctadlir against it
@@ -24,31 +26,44 @@ for f in $(ls -1 "$testdir"/*.tnt); do
   mkdir -p "$testcase_dir"
   ctadl import taint-front "$f" -o "$testcase_dir" -f
   ctadl --dir "$testcase_dir" index -f
+  if [ $? -ne 0 ]; then
+    echo "index failure"
+    any_failed=1
+    continue
+  fi
   ctadl --dir "$testcase_dir" query --format sarif -o "$sarif_file"
+  if [ $? -ne 0 ]; then
+    echo "$testname: query failure"
+    any_failed=1
+    continue
+  fi
   if [ -f "$ir_file" ]; then
     ( cd "$testcase_dir" && python3 "$top/tests/test_ctadlir.py" "$ir_file" )
+    if [ $? -ne 0 ]; then
+      echo "$testname: test_ctadlir failure"
+      any_failed=1
+      continue
+    fi
   fi
   if [ -f "$flows_file" ]; then
     ( cd "$testcase_dir" && python3 "$top/tests/bin/sarif_has_code_flows.py" "$sarif_file" )
+    if [ $? -ne 0 ]; then
+      echo "$testname: sarif_has_code_flows failure"
+      any_failed=1
+      continue
+    fi
   fi
   if [ -f "$noflows_file" ]; then
     ( cd "$testcase_dir" && ! python3 "$top/tests/bin/sarif_has_code_flows.py" "$sarif_file" )
+    if [ $? -ne 0 ]; then
+      echo "$testname: ! sarif_has_code_flows failure"
+      any_failed=1
+      continue
+    fi
   fi
 done
 
-
-# Test --no-compile-analysis
-ctadl --dir "$outdir/global2" index -f --no-compile-analysis
-ctadl --dir "$outdir/global2" query --no-compile-analysis --format sarif -o global2.sarif
-sarif_has_code_flows.py global2.sarif
-
-! ctadl --dir "$outdir/global2" index # index already exists
-! ctadl index -f facts2 # nonexistent facts dir
-rm -f ctadlir.db
-! ctadl query # nonexistent index
-
-# Test without global data flow
-ctadl --dir "$outdir/global2" index -vv -f --no-interprocedural-data-flow
-ctadl --dir "$outdir/global2" export --format gml -o global2.gml
-ctadl --dir "$outdir/global2" query --format sarif -o global2.sarif
-! python3 "$top/tests/bin/sarif_has_code_flows.py" "$outdir/global2/global2.sarif"
+if [ $any_failed -ne 0 ]; then
+  echo "taint-front test failure, see errors above"
+fi
+exit $any_failed

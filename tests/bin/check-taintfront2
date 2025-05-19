@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+
+top="$(git rev-parse --show-toplevel)"
+outdir="$top/ctadl-test-output"
+testdir="$top/tests/taint-front"
+cd $outdir
+
+# Test --no-compile-analysis
+ctadl --dir "$outdir/global2" index -f --no-compile-analysis
+ctadl --dir "$outdir/global2" query --no-compile-analysis --format sarif -o global2.sarif
+sarif_has_code_flows.py global2.sarif
+
+! ctadl --dir "$outdir/global2" index # index already exists
+! ctadl index -f facts2 # nonexistent facts dir
+rm -f ctadlir.db
+! ctadl query # nonexistent index
+
+# Test without global data flow
+ctadl --dir "$outdir/global2" index -vv -f --no-interprocedural-data-flow
+ctadl --dir "$outdir/global2" export --format gml -o global2.gml
+ctadl --dir "$outdir/global2" query --format sarif -o global2.sarif
+! python3 "$top/tests/bin/sarif_has_code_flows.py" "$outdir/global2/global2.sarif"

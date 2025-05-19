@@ -17,6 +17,7 @@ bash $top/tests/bin/check-static
 cd $outdir
 
 bash $top/tests/bin/check-taintfront
+bash $top/tests/bin/check-taintfront2
 
 bash $top/tests/bin/check-ActivityCommunication4
 
