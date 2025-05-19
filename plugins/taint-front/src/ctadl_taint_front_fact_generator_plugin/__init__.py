@@ -27,9 +27,11 @@ def run(ctadl, args, artifact: str, out: str, **kwargs):
     logger.debug("artifact: %s", artifact)
     logger.debug("out: %s", out)
     ctadl.status(f"exporting program with taintfront to '{out}'")
+    factsdir = str(Path(out) / "facts")
+    os.makedirs(factsdir, exist_ok=True)
 
     command = ["taintfront"]
-    opts = [["-o", out], [artifact]]
+    opts = [["-o", factsdir], [artifact]]
     for opt_list in opts:
         command.extend(opt_list)
     command.extend(kwargs.get("argument_passthrough", []))
