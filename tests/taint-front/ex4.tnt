@@ -1,4 +1,6 @@
 def Main() {
+  x = new();
+  y = new();
   x.bar = source(Network);
   r = A(x, y);
   sink(y.foo, Network);
