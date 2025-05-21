@@ -20,12 +20,18 @@ for f in $(ls -1 "$testdir"/*.tnt); do
   echo "TAINT-FRONT TEST:" "$testname"
   sarif_file="$outdir/$testname.sarif"
   testcase_dir="$outdir/$testname"
+  options_file="$testdir/$(basename $f .tnt).options"
   ir_file="$testdir/$(basename $f .tnt).json"
   flows_file="$testdir/$(basename $f .tnt).codeflows"
   noflows_file="$testdir/$(basename $f .tnt).nocodeflows"
   mkdir -p "$testcase_dir"
   ctadl import taint-front "$f" -o "$testcase_dir" -f
-  ctadl --dir "$testcase_dir" index -f
+  option_string=""
+  if [ -f "$options_file" ]; then
+    option_string=$(<"$options_file")
+    option_string=$(echo "$option_string" | tr -d '\n')
+  fi
+  ctadl --dir "$testcase_dir" index $option_string -f
   if [ $? -ne 0 ]; then
     echo "index failure"
     any_failed=1
