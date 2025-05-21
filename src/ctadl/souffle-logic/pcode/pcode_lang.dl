@@ -13,7 +13,7 @@
 #define isConstVarnode(v) \
     VNODE_SPACE(v, "const")
 
-#define PCode_MkArrayIndex(offset) cat("[", offset, "]")
+#define PCode_MkArrayIndex(offset) cat(".[", offset, "]")
 #define PCode_MkFieldAccess(offset) cat(".", offset)
 #define PCode_MkFormal(f, name) cat(f, ":", name)
 
@@ -226,7 +226,7 @@ Load(i, var, ap) :-
     PCODE_INPUT(i, 1, addr),
     PCODE_MNEMONIC(i, "LOAD"),
     var = addr,
-    ap = "[0]".
+    ap = ".[0]".
 
 Load(i, var, ap) :-
     GEP(i_gep, var, ap, _field_ty),
@@ -251,7 +251,7 @@ Store(i, var, ap) :-
     PCODE_INPUT(i, 1, addr),
     PCODE_MNEMONIC(i, "STORE"),
     var = addr,
-    ap = "[0]".
+    ap = ".[0]".
 
 Store(i, var, ap) :-
     GEP(i_gep, var, ap, _),

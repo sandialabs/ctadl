@@ -46,8 +46,7 @@ DotIndex(ap, i) :-
     CisAccessPath(ap),
     strlen(ap) >= 3,
     i = range(2, strlen(ap)-1),
-    (   substr(ap, i, 1) = ".", substr(ap, i-1, 1) != "."
-    ;   substr(ap, i, 1) = "[" ).
+    substr(ap, i, 1) = ".".
 
 // every possible split
 AccessPathNonEmptySplit(ap, prefix, suffix) :-
@@ -69,8 +68,7 @@ ComputedDotIndex(ap, i) :-
     isComputedAccessPath(ap),
     strlen(ap) >= 3,
     i = range(2, strlen(ap)-1),
-    (   substr(ap, i, 1) = ".", substr(ap, i-1, 1) != "."
-    ;   substr(ap, i, 1) = "[").
+    substr(ap, i, 1) = ".".
 
 ComputedAccessPathNonEmptySplit(ap, prefix, suffix) :-
     ComputedDotIndex(ap, i),

@@ -251,11 +251,7 @@ In queries, use the ``STAR`` macro to append stars onto access paths:
 Implementation notes
 --------------------
 
-Star abstraction is done by concatenating a string ``..*`` onto access
-paths. The string ``..*`` is used instead of ``.*`` because then we can
-directly use Souffle’s ``match`` operator to handle taint queries.
-``match`` uses ``.*`` to match possibly empty strings and the first
-period is the field separator. The star-forward and star-backward rules
+The star-forward and star-backward rules
 are implemented like the propagation rules, as macros with one argument.
 The argument denotes the ``MatchPrefix`` case (there are four cases).
 

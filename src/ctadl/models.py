@@ -102,7 +102,6 @@ class JSONTranslator:
 
     @staticmethod
     def as_port(index: int, field: str) -> str:
-        field = field.replace("..*", ".*")
         return f"Argument({index}){field}"
 
     @staticmethod
@@ -511,7 +510,6 @@ class JSONTranslator:
             raise ValueError
 
         port = parse_var()
-        buf = buf.replace(".*", "..*")
         return (port, buf)
 
     def mod_propagation(self, root: JSONModelNode, props):
@@ -586,7 +584,6 @@ class JSONTranslator:
             fields.extend(endp.get("fields", []))
             all_fields = endp.get("all_fields", False)
             for field in fields:
-                field = field.replace(".*", "..*")
                 self.atom(
                     relation="MG_Endpoint",
                     id=root.id,

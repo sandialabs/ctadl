@@ -15,7 +15,7 @@ CInsn_ModelAssign(insn, v_to, ap_to, v_from, ap_from, "intent") :-
     OutputIntentFlows(v_from, ap_from, v_to, ap_to, insn).
 
 // We turn arbitrary key strings into numbers with ord() to avoid confusion with '.' characters
-#define MakeIntentKeyField(dtype, key_str) cat("[intent-", dType, "].", to_string(ord(key_str)))
+#define MakeIntentKeyField(dtype, key_str) cat(".intent[", dType, "].", to_string(ord(key_str)))
 
 // intent.putExtra(key, data) becomes
 // intent[special-datatype].key = data

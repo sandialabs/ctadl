@@ -3,10 +3,8 @@
 #include <ctadl_ir_types.dl>
 
 // To indicate that some unspecified subfield is tainted, we terminate an
-// access path with a STAR. it's defined this way because then it works with
-// souffle's match operator so the field name is '.*' and the first period is
-// the field separator
-#define STAR "..*"
+// access path with a STAR.
+#define STAR ".*"
 
 // CTADL Intermediate Representation (IR) schema
 // ----------------------------------------------------------------------------

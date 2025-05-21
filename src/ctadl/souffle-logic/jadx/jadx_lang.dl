@@ -10,7 +10,7 @@
 
 #define MakeFieldAP(field, type) cat(".", field, ":<", type, ">")
 // expects an integer index
-#define MakeArrayAP(index) cat("[", to_string(index), "]")
+#define MakeArrayAP(index) cat(".[", to_string(index), "]")
 
 CReturnParameter(JADX_RET_ARG_INDEX).
 
