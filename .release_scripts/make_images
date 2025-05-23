@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+
+set -x
+shopt -s expand_aliases
+
+alias crane="nix shell --inputs-from . nixpkgs#crane -c crane"
+alias twine="nix shell --inputs-from . nixpkgs#twine -c twine"
+
+# Uploads docker image to container registry
+gzip -d --stdout --force < "$(nix build -L --print-out-paths --no-link .#docker)" > image.tar
+crane auth login -u "$CI_DEPLOY_USER" --password-stdin "$CI_REGISTRY" <<<"$CI_DEPLOY_PASSWORD"
+crane push image.tar "$CI_REGISTRY_IMAGE:${CI_COMMIT_TAG//+/_}"
+rm -f image.tar
+
+release_version="$CI_COMMIT_TAG"
+release_tag="$CI_COMMIT_TAG"
+releases_url="$CI_API_V4_URL/projects/$CI_PROJECT_ID/releases"
+
+read -d '' -r release_template <<'EOF' || :
+{
+  "name": ("ctadl " + $version),
+  "tag_name": $tag,
+  "assets": {}
+}
+EOF
+
+# Uploads release
+jq --null-input \
+    --arg version "$release_version" \
+    --arg tag "$release_tag" \
+    "$release_template" \
+  | curl --oauth2-bearer "$CI_JOB_TOKEN" --include --fail-with-body \
+         --header 'Content-Type: application/json' --request POST --data '@-' \
+         "$releases_url"
+
+# Uploads python packages to package registry
+for pkg in "ctadl" "ctadl-plugins.taintfront" "ctadl-plugins.jadx" "ctadl-plugins.ghidra" "ctadl-plugins.networkxExport"; do
+  TWINE_USERNAME=gitlab-ci-token TWINE_PASSWORD="${CI_JOB_TOKEN}" twine upload \
+    --verbose --repository-url "${CI_API_V4_URL}"/projects/"${CI_PROJECT_ID}"/packages/pypi \
+    --skip-existing \
+    "$(nix build -L .#ctadlPackages."${pkg}"^whl --no-link --print-out-paths)"/*.whl
+done
+
+
+#gzip -d --stdout --force < "$(nix build -L --print-out-paths --no-link .#singularity)" > image.tar
+#curl --header "JOB-TOKEN: $CI_JOB_TOKEN" --upload-file "image.tar" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/ctadl/$CI_COMMIT_TAG/COYOTE-CTADL-$CI_COMMIT_TAG-SINGULARITY.tar"

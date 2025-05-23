@@ -184,7 +184,7 @@
         release-script = pkgs.writeShellApplication {
           name = "make_images";
           runtimeInputs = with pkgs; [crane jq curl];
-          text = builtins.readFile ./release_scripts/make_images;
+          text = builtins.readFile ./.release_scripts/make_images;
         };
       in {
         # remember nix run --system x86_64-darwin .#souffle23
