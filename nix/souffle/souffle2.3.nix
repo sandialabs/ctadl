@@ -17,8 +17,7 @@ let
       owner = "dbueno";
       repo = "souffle";
       rev = "v${version}-fix-sqlite";
-      sha256 = "sha256-6w2NXoKusZ1cMH+0z3k+gYcczDnXeucAKf1kDBKLrUk=";
-      # sha256 = "1mfnb29xgqaypnk32mfxcxish3989nryyy95d6h8zn40di5c3m61";
+      sha256 = "sha256-d8Nsd0501L4xsl6L15D0OLxJUylcodLpqb2TykSkczA=";
     };
     inherit openmp enableOpenMP enableDebug enable64BitDomain python3;
   };
@@ -26,7 +25,7 @@ let
 in
 souffle.overrideAttrs (attrs: rec {
 
-  patches = [ ./remove-lld.patch ./souffle-2.3-remove-Werror.patch ];
+  patches = [ ./remove-lld.patch ];
 
   preConfigure = ''
     substituteInPlace src/main.cpp \
