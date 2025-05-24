@@ -39,7 +39,7 @@ cmake --build build --target install
   ```
   sudo apt install cmake libncurses-dev flex bison zlib1g-dev sqlite3 libsqlite3-dev libffi-dev build-essential
   ```
-- Windows users not using WSL, see our documentation for more info.
+- Windows users not using WSL, see our [documentation](https://ctadl.readthedocs.io/en/latest/) for more info.
 
 
 The [supported version](https://github.com/dbueno/souffle/tree/v2.3-fix-sqlite) is a patched version of Souffle 2.3.
