@@ -22,13 +22,13 @@ CTADL works under MacOS, Linux, and Windows via Windows Subsystem for Linux (WSL
 ## Dependency - Install Souffle
 
 [Souffle](https://souffle-lang.github.io) is the Datalog engine CTADL uses to perform analysis.
-The [supported version](https://github.com/dbueno/souffle/tree/v2.3-fix-sqlite) is installed into the path `<prefix>` like so:
+Install the [supported version](https://github.com/dbueno/souffle/tree/v2.3-fix-sqlite) into the path `<souffle-install-path>` like so:
 
 ```sh
 git clone --branch v2.3-fix-sqlite https://github.com/dbueno/souffle
 cd souffle
-# recommended config, substitute <prefix> for your install path
-cmake -S . -B build -DSOUFFLE_USE_OPENMP=1 -DCMAKE_BUILD_TYPE=Release -DSOUFFLE_DOMAIN_64BIT=ON -DCMAKE_INSTALL_PREFIX=<prefix> ..
+# recommended config, substitute <souffle-install-path> for where you want souffle installed
+cmake -S . -B build -DSOUFFLE_USE_OPENMP=1 -DCMAKE_BUILD_TYPE=Release -DSOUFFLE_DOMAIN_64BIT=ON -DCMAKE_INSTALL_PREFIX=<souffle-install-path> ..
 cmake --build build -j8
 cmake --build build --target install
 ```
