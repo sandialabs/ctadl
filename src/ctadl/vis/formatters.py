@@ -83,10 +83,10 @@ class SummaryFormatter(BaseFormatter):
             """,
         ).fetchall()[0][0]
         num_forward_tainted_edges = execute(
-            conn, """ SELECT COUNT(insn) FROM "forward_flow.ReachableEdge" """
+            conn, """ SELECT COUNT(DISTINCT insn) FROM "forward_flow.ReachableEdge" """
         ).fetchall()[0][0]
         num_backward_tainted_edges = execute(
-            conn, """ SELECT COUNT(insn) FROM "backward_flow.ReachableEdge" """
+            conn, """ SELECT COUNT(DISTINCT insn) FROM "backward_flow.ReachableEdge" """
         ).fetchall()[0][0]
 
         lines = []
