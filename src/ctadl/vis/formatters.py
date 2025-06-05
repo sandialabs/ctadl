@@ -88,6 +88,16 @@ class SummaryFormatter(BaseFormatter):
         num_backward_tainted_edges = execute(
             conn, """ SELECT COUNT(DISTINCT insn) FROM "backward_flow.ReachableEdge" """
         ).fetchall()[0][0]
+        num_forward_tainted_funcs = execute(
+            conn,
+            """ SELECT COUNT(DISTINCT function) FROM "forward_flow.ReachableEdge" re
+            JOIN CInsn_InFunction iif ON (re.insn = iif.insn) """,
+        ).fetchall()[0][0]
+        num_backward_tainted_funcs = execute(
+            conn,
+            """ SELECT COUNT(DISTINCT function) FROM "backward_flow.ReachableEdge" re
+            JOIN CInsn_InFunction iif ON (re.insn = iif.insn) """,
+        ).fetchall()[0][0]
 
         lines = []
         lines.append("summary of query results:")
@@ -105,6 +115,8 @@ class SummaryFormatter(BaseFormatter):
         lines.append(
             f"{num_backward_tainted_edges} instructions in backward sink-slice"
         )
+        lines.append(f"{num_forward_tainted_funcs} functions in forward sink-slice")
+        lines.append(f"{num_backward_tainted_funcs} functions in backward sink-slice")
         print("\n".join(lines), file=file)
 
     def print_match_results(
