@@ -7,10 +7,12 @@
 .decl _SARIFByteRegion(id: number, byteOffset: number, byteLength: number)
 .decl _SARIFArtifactLocation(id: number, uri: symbol, uriBaseId: symbol)
 .decl _DecompilerSourceMap(binary_artifact_id: number, binary_region_id: number, source_artifact_id: number, source_region_id: number)
+.decl ObjectType(obj: symbol, type: symbol)
 
 #define MakeFieldAP(field, type) cat(".", field, ":<", type, ">")
 // expects an integer index
 #define MakeArrayAP(index) cat(".[", to_string(index), "]")
+#define MakeObjectID(s) to_string(ord(s))
 
 CReturnParameter(JADX_RET_ARG_INDEX).
 
@@ -294,9 +296,12 @@ VirtualMethodInvocation_Base(insn, base) :-
     isVirtualMethodInvocation(insn),
     _ActualParam(insn, JADX_THIS_ARG_INDEX, base).
 
+ObjectType(obj, type),
 CVar_Type(var, "", type),
-CisAlloc(var, "", type) :-
-    _TypeInstance(_, var, type).
+CisAlloc(var, "", obj) :-
+    _TypeInstance(_, var, type),
+    id = MakeObjectID(cat(var,"")),
+    obj = cat(type,"/",to_string(id)).
 
 #if 0
 Method_DeclaringType(method, cls),
@@ -414,9 +419,10 @@ CHA_SuperMethod(c, m, desc, id) :-
 
 #ifdef CTADL_ENABLE_HYBRID_INLINING
 // hybrid inlining method resolution
-IndirectCallResolventFunction(s, ty, funcref) :-
-    // hi determined that indirect call s flows from type ty
-    IndirectCallResolvent(_, s, ty),
+IndirectCallResolventFunction(s, o, funcref) :-
+    // hi determined that indirect call s flows from object o
+    IndirectCallResolvent(_, s, o),
+    ObjectType(o, ty),
     MethodInvocation_Method(s, method),
     Method_SimpleName(method, simple_name),
     Method_Descriptor(method, descriptor),
@@ -487,12 +493,13 @@ CInsn_Call(call_site, to_func) :-
     MG_FuncEval(fromid,  from_func),
     MethodInvocation_Method(call_site, from_func),
     VirtualMethodInvocation_Base(call_site, var),
-    (_VarHasType(var, ty); CisAlloc(var, "", ty)),
+    (_VarHasType(var, ty); CisAlloc(var, "", obj), ObjectType(obj, ty)),
     CHA_SuperMethod(ty, _, _, to_func),
     MG_FuncEval(toid, to_func).
 
-IndirectCallResolventFunction(s, ty, forwardfunc) :-
-    IndirectCallResolvent(_, s, ty),
+IndirectCallResolventFunction(s, o, forwardfunc) :-
+    IndirectCallResolvent(_, s, o),
+    ObjectType(o, ty),
     ForwardIndirectCallsite(_, s, nodeid),
     MG_ForwardCall(nodeid, _, forwardid, _, _, _),
     // Choose resolvent funcs from matching constraint
