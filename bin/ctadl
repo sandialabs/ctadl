@@ -1039,7 +1039,10 @@ def handle_inspect(args):
         with model.DB(args.input_index) as conn:
             m = JSONTranslator.get_propagation_models(conn)
         with writer(args.dump_summaries) as fp:
-            print(json.dumps(m, indent=2), file=fp)
+            # Usually users don't need to look at the summaries. Also, the
+            # summaries can be large. So don't indent it to save a tiny bit of
+            # space.
+            print(json.dumps(m), file=fp)
     if args.dump_source_sink_models:
         default = False
         status(f"dumping source/sink models for '{args.input_index}'", verb=1)
