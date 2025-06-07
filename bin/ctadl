@@ -953,6 +953,20 @@ def dump_analysis(
                 file.write(dlfile.read())
 
 
+# The model_translator can become large. If we make it in its own function, the
+# memory will be freed.
+def write_models(args: Namespace, facts: model.Facts, models):
+    """Writes models to the facts"""
+    model_translator = JSONTranslator(facts)
+    model_translator.translate(
+        models,
+        validate=args.validate_models,
+        progress=ctadl.is_verbosity_enabled_for(1),
+    )
+    if args.models:
+        model_translator.translate(args.models, validate=args.validate_models)
+
+
 def write_query_models(args: Namespace, qmodels):
     """Writes models for a query to the database"""
     facts = model.Facts(args.input_index)
@@ -965,13 +979,7 @@ def write_query_models(args: Namespace, qmodels):
             facts.write(w, "MG_SliceDirection", "forward")
         if any(d in args.compute_slices for d in ["backward", "bwd", "all"]):
             facts.write(w, "MG_SliceDirection", "backward")
-    model_translator = JSONTranslator(facts)
-    if qmodels is not None:
-        model_translator.translate(
-            qmodels,
-            args.validate_models,
-            progress=ctadl.is_verbosity_enabled_for(1),
-        )
+    write_models(args, facts, qmodels)
     write_analyzer_config(args, facts)
 
 
@@ -1172,14 +1180,7 @@ def handle_index(args):
         )
     )
     facts = model.Facts(args.importdir)
-    model_translator = JSONTranslator(facts)
-    model_translator.translate(
-        models,
-        validate=args.validate_models,
-        progress=ctadl.is_verbosity_enabled_for(1),
-    )
-    if args.models:
-        model_translator.translate(args.models, validate=args.validate_models)
+    write_models(args, facts, models)
     dump_analysis(args, compiled_indexers[language], src)
     write_analyzer_config(args, facts)
     analyzer = build_analysis(args, src)

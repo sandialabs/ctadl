@@ -468,7 +468,7 @@ class JSONTranslator:
             m = self.op(op=op, left=n, right=m)
         return m
 
-    def output_datalog_constraint(self, writer, n: JSONModelNode) -> bool:
+    def output_model_generator_facts(self, writer, n: JSONModelNode) -> bool:
         """Outputs a node constraint
 
         If the constraint was already output, returns False. Otherwise returns
@@ -872,6 +872,10 @@ class JSONTranslator:
         return root
 
     def handle_model_generator(self, generator) -> JSONModelNode:
+        """Returns a node representing the result of evaluating the model.
+        Creates nodes for the evaluation tree that implements the model
+        generator. As a side effect, updates self.nodes with intermediate
+        evaluation nodes"""
         find = generator.get("find")
         if find in ["methods", "variables", "fields", "instructions"]:
             return self.handle_find(generator, find=find)
@@ -915,24 +919,18 @@ class JSONTranslator:
         if validate:
             self.validate_models(models, filename=filename)
         with progressbar(fake=not progress) as pbar:
-            model_generators = models.get("model_generators", [])
-            roots = []
-            task = pbar.add_task(
-                description="processing model_generators", total=len(model_generators)
-            )
-            # how many elements before updating progress bar
-            period, i = 5101, 0
-            for i, gen in enumerate(model_generators, start=1):
-                roots.append(self.handle_model_generator(gen))
-                if i % period == 0:
-                    pbar.update(task, advance=period)
-            pbar.update(task, advance=(i % period))
-        with progressbar(fake=not progress) as pbar:
-            task = pbar.add_task(description="writing models", total=len(self.nodes))
-            period, i = 21001, 0
             with self.facts.writer() as writer:
-                for i, n in enumerate(self.nodes, start=1):
-                    self.output_datalog_constraint(writer, n)
+                model_generators = models.get("model_generators", [])
+                task = pbar.add_task(
+                    description="processing model_generators", total=len(model_generators)
+                )
+                # period = update progress after that many elements
+                period, i = 1, 0
+                for i, gen in enumerate(model_generators, start=1):
+                    self.handle_model_generator(gen) # outputs to self.nodes
+                    for n in self.nodes:
+                        self.output_model_generator_facts(writer, n)
+                    self.nodes.clear()
                     if i % period == 0:
                         pbar.update(task, advance=period)
                 pbar.update(task, advance=(i % period))
