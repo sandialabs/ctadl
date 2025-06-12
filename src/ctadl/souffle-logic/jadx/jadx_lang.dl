@@ -538,23 +538,23 @@ ForwardIndirectCallsite(callsite, forward_callsite, nodeid) :-
 // We need to generate code to call the constructor for the given type. We just
 // call any method called "<init>" and we don't give it any arguments except the
 // "this" argument, argument 0.
-CInsn_InFunction(insn, 0, infunc),
-CCall_ActualParam(insn, JADX_THIS_ARG_INDEX, thisvar, ""),
-CCall_ActualParam(insn, globals_index, globals_param, ""),
-CInsn_Call(insn, initfunc),
-CisAlloc(thisvar, "", obj) :-
-    MockObject(id, obj, infunc),
-    insn = cat(infunc, "/", id, "/mock-constr"),
-    CFunction_FormalParam(infunc, JADX_THIS_ARG_INDEX, thisvar),
-    CGlobalParameter(globals_index),
-    CFunction_FormalParam(infunc, globals_index, globals_param),
-    CHA_SuperMethod(obj, "<init>", _, initfunc).
+//CInsn_InFunction(insn, 0, infunc),
+//CCall_ActualParam(insn, JADX_THIS_ARG_INDEX, thisvar, ""),
+//CCall_ActualParam(insn, globals_index, globals_param, ""),
+//CInsn_Call(insn, initfunc),
+//CisAlloc(thisvar, "", obj) :-
+//    MockObject(id, obj, infunc),
+//    insn = cat(infunc, "/", id, "/mock-constr"),
+//    CFunction_FormalParam(infunc, JADX_THIS_ARG_INDEX, thisvar),
+//    CGlobalParameter(globals_index),
+//    CFunction_FormalParam(infunc, globals_index, globals_param),
+//    CHA_SuperMethod(obj, "<init>", _, initfunc).
 
-CSourceInfo_Location(insn, file_id, region_id) :-
-    MockObject(id, obj, infunc),
-    insn = cat(infunc, "/", id, "/mock-constr"),
-    CInsn_InFunction(insn0, 0, infunc),
-    CSourceInfo_Location(insn0, file_id, region_id).
+//CSourceInfo_Location(insn, file_id, region_id) :-
+//    MockObject(id, obj, infunc),
+//    insn = cat(infunc, "/", id, "/mock-constr"),
+//    CInsn_InFunction(insn0, 0, infunc),
+//    CSourceInfo_Location(insn0, file_id, region_id).
 
 //MockObject("mock-AppReceiver-onReceive", "Lcom/android/traceur/AppReceiver;", "Lcom/android/traceur/AppReceiver;.onReceive:(Landroid/content/Context;Landroid/content/Intent;)V").
 
