@@ -174,7 +174,7 @@ souffle::RamDomain PopFrame(souffle::SymbolTable *symbolTable,
 int32_t AccessPathSize(const char *arg1) {
   std::string s(arg1, strlen(arg1));
   int count = std::count_if(s.begin(), s.end(),
-      [](char c) { return c == '.' or c == '['; });
+      [](char c) { return c == '.'; });
   return count;
 }
 
@@ -189,7 +189,7 @@ int32_t AccessPathCycle(const char *arg1) {
   int32_t cyclic = 0;
   //std::cerr << "ap is '" << s << "' start" << std::endl;
   for (std::string::iterator it = s.begin(); it != s.end(); ++it) {
-    if (!(*it == '.' || *it == '[')) {
+    if (!(*it == '.')) {
       continue;
     }
     if (it == s.end()) {
@@ -197,7 +197,7 @@ int32_t AccessPathCycle(const char *arg1) {
     }
     std::string::iterator it2;
     for (it2 = it+1; it2 != s.end(); ++it2) {
-      if (*it2 == '.' || *it2 == '[') {
+      if (*it2 == '.') {
         break;
       }
     }
