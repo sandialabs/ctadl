@@ -252,30 +252,6 @@ isComputedAccessPath(dGdH) :-
 AliasedBy(xv, xp, yv, yp, "") :- AliasedBy_Target(xv), AliasEdge2(yv, yp, xv, xp).
 AliasedBy(x, xp, z, zp, c) :- AliasedBy(x, xp, y, yp, c), AliasEdge2(z, zp, y, yp).
 
-// Send intra-object aliases onto main aliasing relation.
-AliasedBy(a, f, a, fg, cx) :-
-    IntraObjectAliasedBy(a, f, g, cx),
-    fg = cat(f,g),
-    AliasedBy_Target(a).
-
-// x.FG aliased by x.F
-IntraObjectAliasedBy(x, F, G, "") :-
-    // x.F.G <- x.G so x points to itself
-    VirtualAssign(insn, x, FG, x, F, _, _),
-    MatchComputedPrefix(FG, F, G),
-    CCall_ActualParam(insn, _, x, _).
-
-// Follows intra-aliased objects through assignments.
-IntraObjectAliasedBy(a, H, G, cx) :-
-    IntraObjectAliasedBy(x, F, G, cx),
-    CInsn_Move(_, a, H, x, F),
-    MatchComputedPrefix(_HG, H, G).
-
-// Follows intra-aliased objects through assignments.
-IntraObjectAliasedBy(y, H, G, cx) :-
-    IntraObjectAliasedBy(x, "", G, cx),
-    CInsn_Move(_, y, H, x, "").
-
 // Chases local aliases of formal parameters so that if those locals are
 // written two, we may use it to create a new summary.
 AliasedBy_Target(param) :- CFunction_FormalParam(_, _, param).
@@ -302,21 +278,6 @@ SummaryFlow(m, n1, p14, m, n3, p3, "") :-
     (p14 != ""; CFunction_isFormalParamByRef(m, n1)),
     !CFunction_OmitSummaries(m),
     !DisableGlobalDataFlow().
-
-// Propagates flows back onto formals when an object aliases itself
-VirtualAssign(I, param, param_path, param, F, "special", "") :-
-    CInsn_Move(I, param, F, tmp, ""),
-    IntraObjectAliasedBy(tmp, "", G, ""),
-    param_path = cat(F, G),
-    isComputedAccessPath(param_path).
-
-// Star version
-isComputedAccessPath(cat(F,".*")),
-VirtualAssign(I, param, cat(F,".*"), param, F, "special-star", "") :-
-    CInsn_Move(I, param, F, tmp, ""),
-    IntraObjectAliasedBy(tmp, "", G, ""),
-    !CisAccessPath(cat(F, G)),
-    EnableStar().
 
 // ---------------------------------------------------------------------------
 // star abstraction compensates for unbounded access paths with a ".*" field
