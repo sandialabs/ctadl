@@ -807,15 +807,32 @@ def get_souffle_path() -> str:
     return souffle_path
 
 
+def get_file_hash(src: Union[str, Path]) -> Path:
+    algo = hashlib.sha256()
+    with open(str(src), "rb") as file:
+        for byte_block in iter(lambda: file.read(4096), b""):
+            algo.update(byte_block)
+    filename = algo.hexdigest()
+    bin = analysisdir / filename
+
+    logging.debug("checking for compiled artifact at '%s'", bin)
+    return bin
+
+
 def compile_functors(args):
     souffle_path = get_souffle_path()
     cplusplus_path = os.getenv("CXX", shutil.which("c++"))
     cplusplus_flags = os.getenv("CXXFLAGS", "").split()
     shlib_flags, so_ext = get_os_shlib_flags()
 
+    functors_cpp = ctx_stack.enter_context(
+        resources.as_file(resources.files(ctadl) / "souffle-logic" / "functors.cpp")
+    )
     libfunctors_so = os.path.join(analysisdir, "libfunctors" + so_ext)
-    logger.debug("Checking for libfunctors: '%s'", libfunctors_so)
-    if Path(libfunctors_so).exists():
+
+    bin = get_file_hash(functors_cpp)
+    if bin.exists():
+        shutil.copyfile(bin, libfunctors_so)
         return
 
     if cplusplus_path is None:
@@ -827,9 +844,6 @@ def compile_functors(args):
             ],
         )
         exit(1)
-    functors_cpp = ctx_stack.enter_context(
-        resources.as_file(resources.files(ctadl) / "souffle-logic" / "functors.cpp")
-    )
     souffle_base = Path(souffle_path).parents[1]
     c = Command(cplusplus_path)
     c.add_args(
@@ -864,12 +878,13 @@ def compile_functors(args):
     c.add_args(
         [
             "-o",
-            os.path.join(analysisdir, "libfunctors" + so_ext),
+            str(bin),
             os.path.join(args.tmpdir, "functors.o"),
         ]
     )
     try:
         c.run(capture_output=(ctadl.verbosity <= 0 or args.quiet))
+        shutil.copyfile(bin, libfunctors_so)
     except CommandFailure as fail:
         error("Cannot compile libfunctors", remediations=remediations)
         fail.display_capture_and_exit()
@@ -891,12 +906,7 @@ def build_analysis(
     os.makedirs(str(analysisdir), exist_ok=True)
     compile_functors(args)
 
-    algo = hashlib.sha256()
-    with open(src, "rb") as file:
-        for byte_block in iter(lambda: file.read(4096), b""):
-            algo.update(byte_block)
-    filename = algo.hexdigest()
-    bin = analysisdir / filename
+    bin = get_file_hash(src)
 
     logging.debug("checking for compiled analysis at '%s'", bin)
     if not bin.exists():
