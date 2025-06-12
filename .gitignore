@@ -6,7 +6,6 @@ __pycache__
 /out*/
 /profiler_html
 .direnv
-.envrc
 lib/*
 !.gitkeep
 .cache/
