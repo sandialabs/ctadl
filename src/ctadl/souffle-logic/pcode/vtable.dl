@@ -33,7 +33,7 @@ CisAlloc(var, ap1, func) :-
     VTABLE(_, vtable, offset, func_address),
     // filters invalid vtable entries
     HFUNC_EP(func, func_address),
-    ap1 = cat(ap0, "[", to_string(offset), "]").
+    ap1 = cat(ap0, ".[", to_string(offset), "]").
 
 
 // the indirect call is the "CALLIND" op
