@@ -125,32 +125,6 @@ CTADLError(msg) :-
 //    MatchComputedPrefix(from_path, from_actual_path, p2),
 //    (to != from; to_path != from_path).
 
-// af at sf st
-// -  -  -  -  A
-// -  -  -  *  B
-// -  -  *  -  C
-// -  -  *  *  D
-// -  *  -  -  E
-// -  *  -  *  F
-// -  *  *  -  G
-// -  *  *  *  H
-// *  -  -  -  I
-// *  -  -  *  J
-// *  -  *  -  K
-// *  -  *  *  L
-// *  *  -  -  M
-// *  *  -  *  N
-// *  *  *  -  O
-// *  *  *  *  P
-
-// We can group these into a couple of cases:
-// - FROM has at least one empty path and TO has at least one empty path
-// - FROM has at least one empty path but TO are nonempty
-// - TO has at least one empty path but FROM are nonempty
-// - both are nonempty
-// A B C D E F G H I J M N
-// using it
-// K L O P
 VirtualAssign(s, to, to_path, from, from_path, "summary", "") :-
     SummaryFlow(m, n1, st, m, n2, sf, ""),
     CallEdge(s, m, ""),
