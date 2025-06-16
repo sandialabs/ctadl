@@ -130,13 +130,7 @@ VirtualAssign(s, to, to_path, from, from_path, "summary", "") :-
     CallEdge(s, m, ""),
     CCall_ActualParam(s, n1, to, at),
     CCall_ActualParam(s, n2, from, af),
-    // At least one is empty
-    (af = ""; sf = ""),
-    oecat(from_path, af, sf),
-    (at = ""; st = ""),
-    oecat(to_path, at, st),
-    // to_path = cat(at, st), isComputedAccessPath(to_path),
-    // from_path = cat(af, sf), isComputedAccessPath(from_path),
+    ActualToFormalComputedPrefixCase0(to_path, at, st, from_path, af, sf),
     (to != from; to_path != from_path).
 .plan 1: (2, 1, 3, 4)
 
@@ -144,38 +138,17 @@ VirtualAssign(s, to, to_path, from, from_path, "summary", "") :-
     SummaryFlow(m, n1, st, m, n2, sf, ""),
     CallEdge(s, m, ""),
     CCall_ActualParam(s, n2, from, af),
-    ComputedAccessPathNonEmptySplit(from_path, af, sf),
     CCall_ActualParam(s, n1, to, at),
-    (at = ""; st = ""),
-    oecat(to_path, at, st),
-    // to_path = cat(at, st), isComputedAccessPath(to_path),
-    // from_path = cat(af, sf), isComputedAccessPath(from_path),
+    ActualToFormalComputedPrefixCase1(to_path, at, st, from_path, af, sf),
     (to != from; to_path != from_path).
-.plan 1: (2, 1, 3, 4, 5), 2: (4, 1, 3, 2, 5)
-
-VirtualAssign(s, to, to_path, from, from_path, "summary", "") :-
-    SummaryFlow(m, n1, st, m, n2, sf, ""),
-    CallEdge(s, m, ""),
-    CCall_ActualParam(s, n1, to, at),
-    ComputedAccessPathNonEmptySplit(to_path, at, st),
-    CCall_ActualParam(s, n2, from, af),
-    (af = ""; sf = ""),
-    oecat(from_path, af, sf),
-    // to_path = cat(at, st), isComputedAccessPath(to_path),
-    // from_path = cat(af, sf), isComputedAccessPath(from_path),
-    from_path = af,
-    (to != from; to_path != from_path).
-.plan 1: (2, 1, 3, 4, 5), 2: (4, 1, 3, 2, 5)
+.plan 1: (2, 1, 3, 4, 5), 2: (5, 1, 2, 3, 4)
 
 VirtualAssign(s, to, to_path, from, from_path, "summary", "") :- //P
     SummaryFlow(m, n1, st, m, n2, sf, ""),
     CallEdge(s, m, ""),
     CCall_ActualParam(s, n1, to, at),
     CCall_ActualParam(s, n2, from, af),
-    // to_path = cat(at, st), isComputedAccessPath(to_path),
-    // from_path = cat(af, sf), isComputedAccessPath(from_path),
-    ComputedAccessPathNonEmptySplit(to_path, at, st),
-    ComputedAccessPathNonEmptySplit(from_path, af, sf),
+    ActualToFormalComputedPrefixCase2(to_path, at, st, from_path, af, sf),
     (to != from; to_path != from_path).
 .plan 1: (2, 1, 3, 4, 5, 6), 2: (5, 1, 2, 3, 4, 6), 3: (6, 1, 2, 3, 4, 5)
 
