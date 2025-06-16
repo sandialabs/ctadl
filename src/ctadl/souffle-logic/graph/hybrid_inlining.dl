@@ -105,10 +105,24 @@ ParthianVertex(v, full_ap, m_inlines) :-
         HybridInlining_KInliningSize(k),
         m_inlines = n_inlines+1,
         m_inlines <= k
-    ;   !EnableHybridInlining_KInliningSensitivity(),
-        m_inlines = 0,
-        n_inlines=n_inlines
     ).
+.plan 1: (3, 2, 1, 4, 5, 6, 7, 8)
+
+
+ParthianFlowEdge(callee, formal, formal_ap, caller, v, full_ap, ctx),
+ParthianVertex(v, full_ap, m_inlines) :-
+    ParthianVertex(formal, formal_ap, n_inlines),
+    CFunction_FormalParam(callee, n, formal),
+    CallEdge(stmt, callee, ctx),
+    CCall_ActualParam(stmt, n, v, actual_ap),
+    MatchComputedPrefix(full_ap, actual_ap, formal_ap),
+    IntCInsn_InFunction(stmt, _, caller),
+    (
+       !EnableHybridInlining_KInliningSensitivity(),
+         m_inlines = 0,
+         n_inlines=n_inlines
+    ).
+
 
 Vertex(v, p) :-
     ParthianVertex(v, p, _),
