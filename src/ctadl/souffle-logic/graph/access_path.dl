@@ -69,6 +69,10 @@
     oecat(to_path, to_actual_path, to_summary_path) \
     )
 
+// no relations
+// This case split is used for when you only need to match one access path,
+// e.g., when propagating VirtualAlloc. There is no macro for the non-empty
+// case split: you just use ComputedAccessPathNonEmptySplit.
 #define ActualToFormalComputedPrefixCase0_Single( \
         to_path, to_actual_path, to_summary_path) (\
     (to_actual_path = ""; to_summary_path = ""), \
