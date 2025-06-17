@@ -296,8 +296,19 @@ VirtualAlloc(var, ap, obj, f_ctx) :-
     f = @TopFrame(g_ctx),
     f_ctx = @PopFrame(g_ctx),
     CCall_ActualParam(s, n, var, actual_ap),
-    ap = cat(actual_ap, summary_ap),
-    isComputedAccessPath(ap).
+    ActualToFormalComputedPrefixCase0_Single(ap, actual_ap, summary_ap).
+.plan 1: (2, 1, 3, 4)
+
+VirtualAlloc(var, ap, obj, f_ctx) :-
+    SummaryAlloc(g, n, summary_ap, obj, g_ctx),
+    CallEdge(s, g, ""),
+    IntCInsn_InFunction(s, _, f),
+    1 = @CallStringNonEmpty(g_ctx),
+    f = @TopFrame(g_ctx),
+    f_ctx = @PopFrame(g_ctx),
+    CCall_ActualParam(s, n, var, actual_ap),
+    ComputedAccessPathNonEmptySplit(ap, actual_ap, summary_ap).
+.plan 1: (2, 1, 3, 4, 5), 2: (5, 1, 2, 3, 4)
 
 VirtualAlloc(var, ap, obj, f_ctx) :-
     SummaryAlloc(g, n, summary_ap, obj, summary_ctx),
@@ -311,8 +322,23 @@ VirtualAlloc(var, ap, obj, f_ctx) :-
     f = @TopFrame(g_ctx),
     f_ctx = @PopFrame(g_ctx),
     CCall_ActualParam(s, n, var, actual_ap),
-    ap = cat(actual_ap, summary_ap),
-    isComputedAccessPath(ap).
+    ActualToFormalComputedPrefixCase0_Single(ap, actual_ap, summary_ap).
+.plan 1: (2, 1, 3, 4)
+
+VirtualAlloc(var, ap, obj, f_ctx) :-
+    SummaryAlloc(g, n, summary_ap, obj, summary_ctx),
+    CallEdge(s, g, call_ctx),
+    summary_ctx != "",
+    call_ctx != "",
+    (   1 = @CallStringLte(call_ctx, summary_ctx), g_ctx = call_ctx
+    ;   1 = @CallStringLte(summary_ctx, call_ctx), g_ctx = summary_ctx),
+    IntCInsn_InFunction(s, _, f),
+    1 = @CallStringNonEmpty(g_ctx),
+    f = @TopFrame(g_ctx),
+    f_ctx = @PopFrame(g_ctx),
+    CCall_ActualParam(s, n, var, actual_ap),
+    ComputedAccessPathNonEmptySplit(ap, actual_ap, summary_ap).
+.plan 1: (2, 1, 3, 4, 5), 2: (5, 1, 2, 3, 4)
 
 
 #ifdef ALL_OUTPUTS
