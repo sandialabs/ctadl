@@ -152,16 +152,18 @@ VirtualAssign(s, to, to_path, from, from_path, "summary", "") :- //P
     (to != from; to_path != from_path).
 .plan 1: (2, 1, 3, 4, 5, 6), 2: (5, 1, 2, 3, 4, 6), 3: (6, 1, 2, 3, 4, 5)
 
-VirtualAssign(s1, to, to_path, from, from_path, "summary2", "") :-
-    SummaryFlow(m1, n1, p1, m2, n2, p2, ""),
-    m1 != m2,
-    CallEdge(s1, m1, ""),
-    CallEdge(s2, m2, ""),
-    CCall_ActualParam(s1, n1, to, to_actual_path),
-    CCall_ActualParam(s2, n2, from, from_actual_path),
-    MatchComputedPrefix(to_path, to_actual_path, p1),
-    MatchComputedPrefix(from_path, from_actual_path, p2),
-    (to != from; to_path != from_path).
+// Commented this out because we no longer use multi-func summaries due to
+// compositional-globals
+//VirtualAssign(s1, to, to_path, from, from_path, "summary2", "") :-
+//    SummaryFlow(m1, n1, p1, m2, n2, p2, ""),
+//    m1 != m2,
+//    CallEdge(s1, m1, ""),
+//    CallEdge(s2, m2, ""),
+//    CCall_ActualParam(s1, n1, to, to_actual_path),
+//    CCall_ActualParam(s2, n2, from, from_actual_path),
+//    MatchComputedPrefix(to_path, to_actual_path, p1),
+//    MatchComputedPrefix(from_path, from_actual_path, p2),
+//    (to != from; to_path != from_path).
 
 isComputedAccessPath(dGdH) :-
     MatchComputedPrefix(dFH, dF, dH),
