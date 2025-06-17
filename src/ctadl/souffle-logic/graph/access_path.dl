@@ -69,6 +69,12 @@
     oecat(to_path, to_actual_path, to_summary_path) \
     )
 
+#define ActualToFormalComputedPrefixCase0_Single( \
+        to_path, to_actual_path, to_summary_path) (\
+    (to_actual_path = ""; to_summary_path = ""), \
+    oecat(to_path, to_actual_path, to_summary_path) \
+    )
+
 // 1 relation
 #define ActualToFormalComputedPrefixCase1( \
         to_path, to_actual_path, to_summary_path, \
