@@ -225,9 +225,35 @@ VirtualAssign(s, to, to_path, from, from_path, "hinline2", f_ctx) :-
     f_ctx = @PopFrame(g_ctx),
     CCall_ActualParam(s, n1, to, to_actual_path),
     CCall_ActualParam(s, n2, from, from_actual_path),
-    MatchComputedPrefix(to_path, to_actual_path, p1),
-    MatchComputedPrefix(from_path, from_actual_path, p2),
+    ActualToFormalComputedPrefixCase0(to_path, to_actual_path, p1, from_path, from_actual_path, p2),
     (to != from; to_path != from_path).
+.plan 1: (2, 1, 3, 4, 5)
+
+VirtualAssign(s, to, to_path, from, from_path, "hinline2", f_ctx) :-
+    SummaryFlow(g, n1, p1, g, n2, p2, g_ctx),
+    CallEdge(s, g, ""),
+    IntCInsn_InFunction(s, _, f),
+    1 = @CallStringNonEmpty(g_ctx),
+    f = @TopFrame(g_ctx),
+    f_ctx = @PopFrame(g_ctx),
+    CCall_ActualParam(s, n1, to, to_actual_path),
+    CCall_ActualParam(s, n2, from, from_actual_path),
+    ActualToFormalComputedPrefixCase1(to_path, to_actual_path, p1, from_path, from_actual_path, p2),
+    (to != from; to_path != from_path).
+.plan 1: (2, 1, 3, 4, 5, 6), 2: (6, 1, 2, 3, 4, 5)
+
+VirtualAssign(s, to, to_path, from, from_path, "hinline2", f_ctx) :-
+    SummaryFlow(g, n1, p1, g, n2, p2, g_ctx),
+    CallEdge(s, g, ""),
+    IntCInsn_InFunction(s, _, f),
+    1 = @CallStringNonEmpty(g_ctx),
+    f = @TopFrame(g_ctx),
+    f_ctx = @PopFrame(g_ctx),
+    CCall_ActualParam(s, n1, to, to_actual_path),
+    CCall_ActualParam(s, n2, from, from_actual_path),
+    ActualToFormalComputedPrefixCase2(to_path, to_actual_path, p1, from_path, from_actual_path, p2),
+    (to != from; to_path != from_path).
+.plan 1: (2, 1, 3, 4, 5, 6, 7), 2: (6, 1, 2, 3, 4, 5, 7), 3: (7, 1, 2, 3, 4, 5, 6)
 
 VirtualAssign(s, to, to_path, from, from_path, "hinline3", f_ctx) :-
     SummaryFlow(g, n1, p1, g, n2, p2, summary_ctx),
