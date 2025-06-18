@@ -955,19 +955,20 @@ def dump_analysis(
 
 # The model_translator can become large. If we make it in its own function, the
 # memory will be freed.
-def write_models(args: Namespace, facts: model.Facts, models):
+def write_models(args: Namespace, facts: model.Facts, models: Optional[Path]):
     """Writes models to the facts"""
     model_translator = JSONTranslator(facts)
-    model_translator.translate(
-        models,
-        validate=args.validate_models,
-        progress=ctadl.is_verbosity_enabled_for(1),
-    )
-    if args.models:
+    if models:
+        model_translator.translate(
+            models,
+            validate=args.validate_models,
+            progress=ctadl.is_verbosity_enabled_for(1),
+        )
+    if hasattr(args, "models") and args.models:
         model_translator.translate(args.models, validate=args.validate_models)
 
 
-def write_query_models(args: Namespace, qmodels):
+def write_query_models(args: Namespace, qmodels: Optional[Path]):
     """Writes models for a query to the database"""
     facts = model.Facts(args.input_index)
     facts.add_input_relation(
