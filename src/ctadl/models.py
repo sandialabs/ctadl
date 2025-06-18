@@ -922,12 +922,13 @@ class JSONTranslator:
             with self.facts.writer() as writer:
                 model_generators = models.get("model_generators", [])
                 task = pbar.add_task(
-                    description="processing model_generators", total=len(model_generators)
+                    description="processing model_generators",
+                    total=len(model_generators),
                 )
                 # period = update progress after that many elements
                 period, i = 1, 0
                 for i, gen in enumerate(model_generators, start=1):
-                    self.handle_model_generator(gen) # outputs to self.nodes
+                    self.handle_model_generator(gen)  # outputs to self.nodes
                     for n in self.nodes:
                         self.output_model_generator_facts(writer, n)
                     self.nodes.clear()
