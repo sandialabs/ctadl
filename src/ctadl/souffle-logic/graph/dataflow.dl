@@ -87,16 +87,6 @@ LocallyReachable(v1, p1, v3, p3, ctx0) :-
 //    1 = @CallStringUnder(ctx2, ctx1).
 //.plan 1: (2, 1, 3, 4)
 
-// Local reachability is principally used to compute function summaries.
-SummaryFlow(m1, n1, p1, m2, n2, p2, ctx) :-
-    LocallyReachable(f1, p1, f2, p2, ctx),
-    CFunction_FormalParam(m1, n1, f1),
-    CFunction_FormalParam(m2, n2, f2),
-    (n1 != n2; p1 != p2; m1 != m2),
-    (p1 != ""; CFunction_isFormalParamByRef(m1, n1)),
-    !CFunction_OmitSummaries(m1),
-    !CFunction_OmitSummaries(m2),
-    !DisableGlobalDataFlow().
 
 CTADLError(msg) :-
     LocallyReachable(v1, _p1, v2, _p2, _),
@@ -216,40 +206,197 @@ isComputedAccessPath(dGdH) :-
 
 // ---------------------------------------------------------------------------
 // Aliasing on variables
-
 // calculate alias sets based only on the original program, i.e., this uses
 // CInsn_Move we do this because they represent real code assignments (bounded
 // and confident), not derived flows
 #define AliasEdge2(dst, dstap, src, srcap) (CInsn_Move(_, dst, dstap, src, srcap), !CVar_isGlobal(dst), !CVar_isGlobal(src))
-AliasedBy(xv, xp, yv, yp, "") :- AliasedBy_Target(xv), AliasEdge2(yv, yp, xv, xp).
-AliasedBy(x, xp, z, zp, c) :- AliasedBy(x, xp, y, yp, c), AliasEdge2(z, zp, y, yp).
 
-// Chases local aliases of formal parameters so that if those locals are
-// written two, we may use it to create a new summary.
-AliasedBy_Target(param) :- CFunction_FormalParam(_, _, param).
+#if 0
+.decl VertPointsTo(var: CVar, ap: CAccessPath, heap: symbol, ctx: symbol)
+.decl FldPointsTo(baseH: symbol, ap: CAccessPath, heap: symbol, ctx: symbol)
+.decl FormalHeap(var: CVar, heap: symbol)
 
-// Propagates aliases between formals.
-SummaryFlow(func, na, f, func, nb, g, ctx) :-
-    AliasedBy(a, f, b, g, ctx),
-    CFunction_FormalParam(func, na, a),
-    CFunction_FormalParam(func, nb, b),
+.output VertPointsTo(CTADL_OUTPUT_DB_IO)
+.output FldPointsTo(CTADL_OUTPUT_DB_IO)
+
+
+// x.F -> heap for alloc
+FormalHeap(var, heap),
+VertPointsTo(var, F, heap, ctx) :-
+    CFunction_FormalParam(func, n, var), n >= 0,
+    heap = cat(func, "/<<formal-", to_string(n), ">>"),
+    F = "",
+    ctx = "".
+VertPointsTo(var, F, heap, ctx) :-
+    VirtualAlloc(var, F, heap, ""),
+    ctx = "".
+
+// x.F -> h    y.G = x.F
+// => y.G -> h
+VertPointsTo(y, G, h, ctx) :-
+    VertPointsTo(x, F, h, ctx),
+    AliasEdge2(y, G, x, F).
+
+// The following two rule groups accomplish implicit loads and stores
+
+// Propagate vert to heap
+// x.H -> h1    x.H.G -> h2 G one field
+// => h1.G -> h2
+FldPointsTo(h1, G, h2, "") :-
+    VertPointsTo(x, H, h1, _),
+    VertPointsTo(x, HG, h2, _),
+    CisField(HG),
+    (H = "", G = HG).
+.plan 1: (2, 1, 3)
+FldPointsTo(h1, G, h2, "") :-
+    VertPointsTo(x, H, h1, _),
+    VertPointsTo(x, HG, h2, _),
+    FieldNonEmptySplit(HG, H, G).
+.plan 1: (2, 1, 3)
+
+// Propagate heap to vert
+// x.H -> h1    h1.G -> h2
+// => x.H.G -> h2
+VertPointsTo(x, HG, h2, "") :-
+    VertPointsTo(x, H, h1, _),
+    FldPointsTo(h1, G, h2, _),
+    H = "", HG = G.
+.plan 1: (2, 1)
+VertPointsTo(x, HG, h2, "") :-
+    VertPointsTo(x, H, h1, _),
+    FldPointsTo(h1, G, h2, _),
+    AccessPathNonEmptySplit(HG, H, G).
+
+
+.decl SummaryFlowPointsTo(
+    m1: CFunction, n1: number, p1: CAccessPath,
+    m2: CFunction, n2: number, p2: CAccessPath,
+    ctx: symbol
+)
+.output SummaryFlowPointsTo(CTADL_OUTPUT_DB_IO)
+SummaryFlowPointsTo(func, na, F, func, nb, G, ""),
+SummaryFlow(func, na, F, func, nb, G, "") :-
+    VertPointsTo(x, F, h, _), FormalHeap(x, h),
+    CFunction_FormalParam(func, nb, x),
+    VertPointsTo(y, G, h, _),
+    CFunction_FormalParam(func, na, y),
+    (na != nb; F != G),
     !CFunction_OmitSummaries(func),
     !DisableGlobalDataFlow().
+.plan 1: (4, 5, 2, 1, 3)
+
+SummaryFlowPointsTo(func, na, F, func, nb, G, ""),
+SummaryFlow(func, na, F, func, nb, G, "") :-
+    FldPointsTo(h
+    VertPointsTo(x, F, h, _), FormalHeap(x, h),
+    CFunction_FormalParam(func, nb, x),
+    VertPointsTo(y, G, h, _),
+    CFunction_FormalParam(func, na, y),
+    (na != nb; F != G),
+    !CFunction_OmitSummaries(func),
+    !DisableGlobalDataFlow().
+.plan 1: (4, 5, 2, 1, 3)
+#endif
+
+// Local reachability is principally used to compute function summaries.
+SummaryFlow(m1, n1, p1, m2, n2, p2, ctx) :-
+    LocallyReachable(f1, p1, f2, p2, ctx),
+    CFunction_FormalParam(m1, n1, f1),
+    CFunction_FormalParam(m2, n2, f2),
+    (n1 != n2; p1 != p2; m1 != m2),
+    (p1 != ""; CFunction_isFormalParamByRef(m1, n1)),
+    !CFunction_OmitSummaries(m1),
+    !CFunction_OmitSummaries(m2),
+    !DisableGlobalDataFlow().
+
+
+
+// This is the general rule. If there is an alias aG of a formal and there is a
+// write to aGH, then the latter write flows to the former formal.
+#if 0
+// xFH <--summary-- yK
+SummaryFlow(func, n1, FH, func, n2, K, "") :-
+    // aG <-- xF
+    LocallyReachable(a, G, x, F, ""),
+    // aGH <-- yK
+    LocallyReachable(a, GH, y, K, ""),
+    MatchComputedPrefix(GH, G, H), H != "",
+    MatchComputedPrefix(FH, F, H),
+    CFunction_FormalParam(func, n2, y),
+    CFunction_FormalParam(func, n1, x),
+    (n1 != n2; FH != K).
+#endif
+
+// There are four string cases for G and F, depending on G and F being empty. H
+// is always non-empty.
+// The four cases are used to make four rules below.
+// G F
+// - -
+// - *
+// * -
+// * *
+SummaryFlow(func, n1, FH, func, n2, K, "") :-
+    LocallyReachable(a, G, x, F, ""),
+    LocallyReachable(a, GH, y, K, ""),
+    x != y, G != GH,
+    G = "", F = "", GH = H, FH = H,
+    CFunction_FormalParam(func, n2, y),
+    CFunction_FormalParam(func, n1, x),
+    (n1 != n2; FH != K).
+.plan 1: (2,1,3,4)
+SummaryFlow(func, n1, FH, func, n2, K, "") :-
+    LocallyReachable(a, G, x, F, ""),
+    LocallyReachable(a, GH, y, K, ""),
+    x != y, G != GH,
+    G != "", F = "", ComputedAccessPathNonEmptySplit(GH, G, H), FH = H,
+    CFunction_FormalParam(func, n2, y),
+    CFunction_FormalParam(func, n1, x),
+    (n1 != n2; FH != K).
+.plan 1:(2,1,3,4,5), 2:(3,2,1,4,5)
+SummaryFlow(func, n1, FH, func, n2, K, "") :-
+    LocallyReachable(a, G, x, F, ""),
+    LocallyReachable(a, GH, y, K, ""),
+    x != y, G != GH,
+    G = "", F != "", GH = H, ComputedAccessPathNonEmptySplit(FH, F, H),
+    CFunction_FormalParam(func, n2, y),
+    CFunction_FormalParam(func, n1, x),
+    (n1 != n2; FH != K).
+.plan 1:(2,1,3,4,5), 2:(3,1,2,4,5)
+SummaryFlow(func, n1, FH, func, n2, K, "") :-
+    LocallyReachable(a, G, x, F, ""),
+    LocallyReachable(a, GH, y, K, ""),
+    x != y, G != GH,
+    G != "", GH != "", F != "", ComputedAccessPathNonEmptySplit(GH, G, H), ComputedAccessPathNonEmptySplit(FH, F, H),
+    CFunction_FormalParam(func, n2, y),
+    CFunction_FormalParam(func, n1, x),
+    (n1 != n2; FH != K).
+.plan 0:(1,3,2,4,5,6), 1:(2,1,3,4,5,6), 2:(3,2,1,4,5,6), 3:(4,1,2,3,5,6)
+
+
+
+
+// Propagates aliases between formals.
+//SummaryFlow(func, na, f, func, nb, g, ctx) :-
+//    AliasedBy(a, f, b, g, ctx),
+//    CFunction_FormalParam(func, na, a),
+//    CFunction_FormalParam(func, nb, b),
+//    !CFunction_OmitSummaries(func),
+//    !DisableGlobalDataFlow().
 
 // Discovers summaries where data flows to a local which is an alias of a
 // formal.
-SummaryFlow(m, n1, p14, m, n3, p3, "") :-
-    LocallyReachable(v2, p24, f3, p3, ""),
-    AliasedBy(f1, p1, v2, p2, ""),
-    MatchComputedPrefix(p24, p2, p4),
-    p14 = cat(p1,p4),
-    isComputedAccessPath(p14),
-    CFunction_FormalParam(m, n3, f3),
-    CFunction_FormalParam(m, n1, f1),
-    (n1 != n3; p14 != p3),
-    (p14 != ""; CFunction_isFormalParamByRef(m, n1)),
-    !CFunction_OmitSummaries(m),
-    !DisableGlobalDataFlow().
+//SummaryFlow(m, n1, p14, m, n3, p3, "") :-
+//    LocallyReachable(v2, p24, f3, p3, ""),
+//    AliasedBy(f1, p1, v2, p2, ""),
+//    MatchComputedPrefix(p24, p2, p4),
+//    p14 = cat(p1,p4),
+//    isComputedAccessPath(p14),
+//    CFunction_FormalParam(m, n3, f3),
+//    CFunction_FormalParam(m, n1, f1),
+//    (n1 != n3; p14 != p3),
+//    (p14 != ""; CFunction_isFormalParamByRef(m, n1)),
+//    !CFunction_OmitSummaries(m),
+//    !DisableGlobalDataFlow().
 
 // ---------------------------------------------------------------------------
 // star abstraction compensates for unbounded access paths with a ".*" field

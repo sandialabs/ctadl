@@ -1,0 +1,5 @@
+def f(p1, p2, p3) {
+    z = p1;
+    w = p3;
+    z.foo = w.bar;
+}

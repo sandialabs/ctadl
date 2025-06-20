@@ -168,5 +168,15 @@ ComputedAccessPathNonEmptySplit(ap, prefix, suffix) :-
     // rules. Propagatiing them leads to a proliferation of badness.
     !contains(STAR, suffix).
 
+.decl ComputedFieldNonEmptySplit(ap: CAccessPath, prefix: CAccessPath, field: CAccessPath)
+ComputedFieldNonEmptySplit(ap, prefix, field) :-
+    ComputedAccessPathNonEmptySplit(ap, prefix, field),
+    CisField(field).
+.decl FieldNonEmptySplit(ap: CAccessPath, prefix: CAccessPath, field: CAccessPath)
+FieldNonEmptySplit(ap, prefix, field) :-
+    AccessPathNonEmptySplit(ap, prefix, field),
+    CisField(field).
+
+
 CTADLStats("AccessPathNonEmptySplit", n) :- n = count : { AccessPathNonEmptySplit(_, _, _) }.
 CTADLStats("ComputedAccessPathNonEmptySplit", n) :- n = count : { ComputedAccessPathNonEmptySplit(_, _, _) }.

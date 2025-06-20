@@ -142,11 +142,13 @@ CTADLError(msg) :-
     msg = cat(cls, " ", fld, " found in IGet but has no InstanceField info").
 #endif
 
+CisField(ap),
 CisAccessPath(ap),
 CInsn_Move(stmt, to_var, "", from_var, ap) :-
   _AGet(stmt, index, to_var, from_var),
   ap = MakeArrayAP(index).
 
+CisField(ap),
 CisAccessPath(ap),
 CInsn_Move(stmt, to_var, ap, from_var, "") :-
   _APut(stmt, index, to_var, from_var),

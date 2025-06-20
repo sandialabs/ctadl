@@ -1,0 +1,9 @@
+// This is a common alias pattern. Something aliases the "this" object and a
+// parameter flows to it.
+def F(this, p) {
+    tmp = this;
+    tmp.field = p;
+
+    tmp2.g = tmp.g;
+    tmp2.g.h = p.j;
+}

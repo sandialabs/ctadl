@@ -1,5 +1,0 @@
-def f(p1, p2, p3) {
-    p1 = p2;
-    p2.foo = x;
-    p1.foo = y;
-}
