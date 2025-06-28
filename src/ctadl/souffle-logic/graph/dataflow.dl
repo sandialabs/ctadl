@@ -73,8 +73,7 @@ LocallyReachable(v1, p1, v2, p2, ctx) :-
 LocallyReachable(v1, p1, v3, p3, ctx0) :-
     LocallyReachable(v2, p2, v3, p3, ctx1),
     LocallyReachable_CtxEdge(v1, p1, v2, p2, ctx2),
-    (   ctx1 = "", ctx0=ctx2;
-        1 = @CallStringUnder(ctx2, ctx1), ctx0=ctx1).
+    ContextOut(ctx0, ctx1, ctx2, tmp).
 .plan 1: (2, 1, 3, 4)
 
 // v2.p2 <- v3.p3 in context bar(bar1

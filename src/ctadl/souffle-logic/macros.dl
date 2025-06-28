@@ -28,4 +28,4 @@
         ctx1 = ctx2, ctx0 = ctx1; \
         ctx1 != ctx2, ctx1 != "", ctx2 != "", 1 = @CallStringUnder(ctx2, ctx1), ctx0 = ctx1)
 
-#define ContextOut(c, c1, c2, tmp) (tmp = CheckSubstring(c1, c2), (tmp = 1, c = c1; tmp = 2, c = c2))
+#define ContextOut(c, c1, c2, tmp) (tmp = @CheckSubstring(c1, c2), (tmp = 1, c = c1; tmp = 2, c = c2))
