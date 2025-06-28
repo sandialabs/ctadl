@@ -30,6 +30,8 @@ choice-domain (targetv, f, g)
 .functor CallStringNonEmpty(s: symbol): number
 // Returns the number of frames in the call string
 .functor CallStringSize(s: symbol): number
+// Returns 1 if s1 contains s2; 2 if s2 contains s1; 0 otherwise
+.functor CheckSubstring(s1: symbol, s2: symbol): number
 // Returns the top frame of the call string. Precondition: there is at least
 // one frame in the call string
 .functor TopFrame(stack: symbol): symbol stateful

@@ -245,4 +245,16 @@ souffle::RamDomain AndroidManifestClassId(
   }
   return symbolTable->encode(jvm_name);
 }
+
+int CheckSubstring(const char *arg1, const char *arg2) {
+  const std::string str1(arg1, strlen(arg1));
+  const std::string str2(arg2, strlen(arg2));
+  if (str1.find(str2) != std::string::npos) {
+    return 1;
+  } else if (str2.find(str1) != std::string::npos) {
+    return 2;
+  }
+  return 0;
+}
+
 }
