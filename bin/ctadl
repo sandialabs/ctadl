@@ -828,11 +828,12 @@ def compile_functors(args):
     functors_cpp = ctx_stack.enter_context(
         resources.as_file(resources.files(ctadl) / "souffle-logic" / "functors.cpp")
     )
-    libfunctors_so = os.path.join(analysisdir, "libfunctors" + so_ext)
+    libfunctors_so = analysisdir / ("libfunctors" + so_ext)
 
     bin = get_file_hash(functors_cpp)
     if bin.exists():
-        shutil.copyfile(bin, libfunctors_so)
+        if not libfunctors_so.exists():
+            shutil.copyfile(bin, libfunctors_so)
         return
 
     if cplusplus_path is None:
