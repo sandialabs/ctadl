@@ -8,6 +8,7 @@
   mcpp,
   makeWrapper,
   withPythonWheel,
+  llvmPackages,
   jdk ? null,
   enableRich ? true,
   enableJdk ? false,
@@ -96,6 +97,9 @@
     makeWrapperArgs =
       [
         ''--prefix PATH ':' "${lib.makeBinPath [souffle]}"''
+      ]
+      ++ lib.optionals stdenv.cc.isClang [
+        ''--set LDFLAGS "-L${llvmPackages.libcxxabi}/lib"''
       ]
       ++ lib.optionals enableJdk [
         ''--set JAVA_HOME "${jdk.home}"''

@@ -823,6 +823,7 @@ def compile_functors(args):
     souffle_path = get_souffle_path()
     cplusplus_path = os.getenv("CXX", shutil.which("c++"))
     cplusplus_flags = os.getenv("CXXFLAGS", "").split()
+    ld_flags = os.getenv("LDFLAGS", "").split()
     shlib_flags, so_ext = get_os_shlib_flags()
 
     functors_cpp = ctx_stack.enter_context(
@@ -876,6 +877,7 @@ def compile_functors(args):
 
     c = Command(cplusplus_path)
     c.add_args(shlib_flags)
+    c.add_args(ld_flags)
     c.add_args(
         [
             "-o",
@@ -1954,8 +1956,8 @@ CTADL pays attention to the following environment variables:
 * CTADL_DEFAULT_DIRECTORY: Directory CTADL switches to before an operation. See
   also --directory.
 * SOUFFLE: Path to souffle binary.
-* CC, CXX, and CXXFLAGS: CC is used to find a preprocessor for analyses. CXX
-  and CXXFLAGS used to compile analyses.
+* CC, CXX, CXXFLAGS, and LDFLAGS: CC is used to find a preprocessor for
+  analyses. CXX, CXXFLAGS, and LDFLAGS are used to compile analyses.
 """
 
 
