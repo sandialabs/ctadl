@@ -144,81 +144,75 @@ CFunction_ModelAssign(fid, dstindex, dstap, fid, srcindex, srcap) :-
 // them may end up in an "Eval" relation.
 
 MG_FuncEval(opid, fid) :-
-    (   MG_FuncEval(c1, fid), c2=c2
-    ;   MG_FuncEval(c2, fid), c1=c1),
-    MG_OpNode(opid, "union"),
-    MG_Edge2(opid, c1, c2).
+    MG_FuncEval(c, fid),
+    (MG_Edge2(opid, c, _); MG_Edge2(opid, _, c)),
+    MG_OpNode(opid, "union").
 
 MG_FuncEval(opid, fid) :-
     MG_FuncEval(c1, fid),
-    MG_FuncEval(c2, fid),
+    MG_Edge2(opid, c1, c2),
     MG_OpNode(opid, "intersection"),
-    MG_Edge2(opid, c1, c2).
+    MG_FuncEval(c2, fid).
 .plan 1: (2, 1, 3, 4)
 
 MG_VarEval(opid, vid) :-
-    (   MG_VarEval(c1, vid), c2=c2
-    ;   MG_VarEval(c2, vid), c1=c1),
-    MG_OpNode(opid, "union"),
-    MG_Edge2(opid, c1, c2).
+    MG_VarEval(c, vid),
+    (MG_Edge2(opid, c, _); MG_Edge2(opid, _, c)),
+    MG_OpNode(opid, "union").
 
 MG_VarEval(opid, vid) :-
     MG_VarEval(c1, vid),
-    MG_VarEval(c2, vid),
+    MG_Edge2(opid, c1, c2),
     MG_OpNode(opid, "intersection"),
-    MG_Edge2(opid, c1, c2).
+    MG_VarEval(c2, vid).
 .plan 1: (2, 1, 3, 4)
 
 MG_InsnEval(opid, vid) :-
-    (   MG_InsnEval(c1, vid), c2=c2
-    ;   MG_InsnEval(c2, vid), c1=c1),
-    MG_OpNode(opid, "union"),
-    MG_Edge2(opid, c1, c2).
+    MG_InsnEval(c, vid),
+    (MG_Edge2(opid, c, _); MG_Edge2(opid, _, c)),
+    MG_OpNode(opid, "union").
 
 MG_InsnEval(opid, nameid) :-
     MG_InsnEval(c1, nameid),
-    MG_InsnEval(c2, nameid),
+    MG_Edge2(opid, c1, c2),
     MG_OpNode(opid, "intersection"),
-    MG_Edge2(opid, c1, c2).
+    MG_InsnEval(c2, nameid).
 .plan 1: (2, 1, 3, 4)
 
 MG_FieldEval(opid, vid) :-
-    (   MG_FieldEval(c1, vid), c2=c2
-    ;   MG_FieldEval(c2, vid), c1=c1),
-    MG_OpNode(opid, "union"),
-    MG_Edge2(opid, c1, c2).
+    MG_FieldEval(c, vid),
+    (MG_Edge2(opid, c, _); MG_Edge2(opid, _, c)),
+    MG_OpNode(opid, "union").
 
 MG_FieldEval(opid, nameid) :-
     MG_FieldEval(c1, nameid),
-    MG_FieldEval(c2, nameid),
+    MG_Edge2(opid, c1, c2),
     MG_OpNode(opid, "intersection"),
-    MG_Edge2(opid, c1, c2).
+    MG_FieldEval(c2, nameid).
 .plan 1: (2, 1, 3, 4)
 
 MG_NumberEval(opid, n) :-
-    (   MG_NumberEval(c1, n), c2=c2
-    ;   MG_NumberEval(c2, n), c1=c1),
-    MG_OpNode(opid, "union"),
-    MG_Edge2(opid, c1, c2).
+    MG_NumberEval(c, n),
+    (MG_Edge2(opid, c, _); MG_Edge2(opid, _, c)),
+    MG_OpNode(opid, "union").
 
 MG_NumberEval(opid, n) :-
     MG_NumberEval(c1, n),
-    MG_NumberEval(c2, n),
+    MG_Edge2(opid, c1, c2),
     MG_OpNode(opid, "intersection"),
-    MG_Edge2(opid, c1, c2).
+    MG_NumberEval(c2, n).
 .plan 1: (2, 1, 3, 4)
 
 MG_NameEval(opid, name) :-
-    (   MG_NameEval(c1, name), c2=c2
-    ;   MG_NameEval(c2, name), c1=c1),
-    MG_OpNode(opid, "union"),
-    MG_Edge2(opid, c1, c2).
+    MG_NameEval(c, name),
+    (MG_Edge2(opid, c, _); MG_Edge2(opid, _, c)),
+    MG_OpNode(opid, "union").
 
 MG_NameEval(opid, nameid) :-
     MG_NameEval(c1, nameid),
-    MG_NameEval(c2, nameid),
+    MG_Edge2(opid, c1, c2),
     MG_OpNode(opid, "intersection"),
-    MG_Edge2(opid, c1, c2).
+    MG_NameEval(c2, nameid).
 .plan 1: (2, 1, 3, 4)
 
 MG_FuncEval(nodeid, fid) :-

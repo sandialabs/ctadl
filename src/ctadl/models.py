@@ -253,11 +253,8 @@ class JSONTranslator:
                                 parent=parents.get(func),
                             )
                             | {"unqualified-id": func},
-                            dict(
-                                constraint="signature_match", pattern=signatures[func]
-                            ),
                         ],
-                        models=models,
+                        model=CleanDict(propagation=models),
                     )
                     for func, models in models_by_func.items()
                 ]
