@@ -71,8 +71,10 @@ CFunction_isFormalParamByRef(method, pos),
 CFunction_FormalParam(method, pos, global_param),
 CVar_Name(global_param, GlobalsParamName),
 CCall_ActualParam(stmt, pos, global_param, "") :-
-    _ActualParam(stmt, _, _),
-    _StmtInMethod(stmt, _, method),
+    isMethodInvocation(stmt),
+    // Need to make sure we pick up all method calls, even clinit calls we
+    // generate
+    (_StmtInMethod(stmt, _, method); IntCInsn_InFunction(stmt, _, method)),
     pos = -3,
     global_param = cat(method, "/", GlobalsParamName).
 
@@ -525,6 +527,26 @@ CCall_VirtualBase(fwdsite, 0) :-
 IntCInsn_InFunction(fwdsite, index, func) :-
     ForwardIndirectCallsite(callsite, fwdsite, _),
     _StmtInMethod(callsite, index, func).
+
+// Class initializers need to be called for data to flow.
+
+.decl isClassInitializer(method: symbol)
+
+isClassInitializer(method) :-
+    _Method(method, simple_name, decl_ty, return_type, descriptor, arity),
+    contains("clinit", simple_name),
+    descriptor = "()V".
+
+
+// Generates a call from every other member method to the class initializer for the class
+isMethodInvocation(insn),
+IntCInsn_InFunction(insn, -1, caller),
+CInsn_UnsuspiciousCall(insn, clinit) :-
+    isClassInitializer(clinit),
+    _Method(clinit, _, decl_ty, _, _, _),
+    _Method(caller, _, decl_ty, _, _, _),
+    caller != clinit,
+    insn = cat(caller, "/call-clinit").
 
 // XXX Technically just copy the actuals that are in matching funcs or something
 
