@@ -15,7 +15,7 @@
 
 let
   toolsPath = lib.makeBinPath [ mcpp stdenv.cc ];
-  libsPath = lib.makeLibraryPath ([ stdenv.cc.cc ] ++ lib.optional stdenv.cc.isClang llvmPackages.libcxxabi);
+  libsPath = lib.makeLibraryPath ([ stdenv.cc.cc ] ++ lib.optional stdenv.cc.isClang llvmPackages.libcxx);
 in
 stdenv.mkDerivation rec {
   pname = "souffle";
@@ -53,7 +53,7 @@ stdenv.mkDerivation rec {
 
   souffleCompileLdFlags = "-L${ncurses}/lib -L${zlib}/lib -L${sqlite.out}/lib -L${libffi}/lib"
   + lib.optionalString (stdenv.cc.isClang && enableOpenMP) " -L${openmp}/lib"
-  + lib.optionalString stdenv.cc.isClang " -L${llvmPackages.libcxxabi}/lib";
+  + lib.optionalString stdenv.cc.isClang " -L${llvmPackages.libcxx}/lib";
 
   # Ensure debug symbols when enableDebug is passed
   hardeningDisable = lib.optional enableDebug "all";

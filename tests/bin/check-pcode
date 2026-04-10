@@ -9,14 +9,14 @@ top="$(git rev-parse --show-toplevel)"
 outdir="$top/ctadl-test-output"
 cd $outdir
 
-ctadl import pcode $(nix build --inputs-from . nixpkgs#curl --no-link --json | jq -r ".[0].outputs.bin")/bin/curl -o pcode_curl_facts -f
+ctadl import pcode $(nix build --inputs-from "$top" nixpkgs#curl --no-link --json | jq -r ".[0].outputs.bin")/bin/curl -o pcode_curl_facts -f
 ctadl index -f pcode_curl_facts
 ctadl query --format=sarif > curl.pcode.sarif
 $CHECKSARIF curl.pcode.sarif
 mv -f ctadlir.db pcodeir.db
 rm -rf pcode_curl_facts
 
-nginx=$(nix build .#nginx-debug --print-out-paths --no-link)
+nginx=$(nix build "$top"#nginx-debug --print-out-paths --no-link)
 ctadl import pcode $nginx/bin/nginx -o out/nginx-pcode -f
 ctadl --dir out/nginx-pcode index -f
 XDG_DATA_HOME=out/nginx-pcode ctadl --dir out/nginx-pcode query --dl $top/tests/query_nginx.dl --compute-slice fwd --format summary > out/nginx-pcode/summary.txt

@@ -1,5 +1,4 @@
-{ self
-, makeWrapper
+{ makeWrapper
 , fetchFromGitHub
 , fetchzip
 , stdenv

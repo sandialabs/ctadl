@@ -60,6 +60,8 @@
   pkg = python3.pkgs.buildPythonPackage rec {
     pname = "ctadl";
     version = lib.strings.removeSuffix "\n" (builtins.readFile ./src/ctadl/VERSION);
+    pyproject = true;
+    build-system = with python3.pkgs; [setuptools];
 
     src = with builtins;
       builtins.path {
@@ -79,9 +81,7 @@
     # disable tests, won't work without index which can't be generated without building
     doCheck = false;
 
-    nativeBuildInputs =
-      [makeWrapper souffle]
-      ++ (with python3.pkgs; [setuptools]);
+    nativeBuildInputs = [makeWrapper souffle];
     propagatedBuildInputs = with python3.pkgs;
       [jsonschema psutil json5 mcpp]
       ++ lib.optionals enableRich [rich];
@@ -99,7 +99,7 @@
         ''--prefix PATH ':' "${lib.makeBinPath [souffle]}"''
       ]
       ++ lib.optionals stdenv.cc.isClang [
-        ''--set LDFLAGS "-L${llvmPackages.libcxxabi}/lib"''
+        ''--set LDFLAGS "-L${llvmPackages.libcxx}/lib"''
       ]
       ++ lib.optionals enableJdk [
         ''--set JAVA_HOME "${jdk.home}"''

@@ -32,6 +32,8 @@ souffle.overrideAttrs (attrs: rec {
           --replace 'const char* interpreter = "python3";' 'const char* interpreter = "${bash}/bin/bash";'
     substituteInPlace src/main.cpp \
         --replace 'bool endInput() {' 'bool endInput() override {'
+    substituteInPlace src/interpreter/Index.h \
+        --replace-fail 'data = src.data;' 'data.store(src.data.load());'
 
     substituteInPlace src/CMakeLists.txt \
         --replace '\"source_include_dir\": \"''${CMAKE_CURRENT_SOURCE_DIR}/include\"' \
