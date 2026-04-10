@@ -8,7 +8,7 @@ top="$(git rev-parse --show-toplevel)"
 outdir="$top/ctadl-test-output"
 cd $outdir
 
-ctadl import pcode $(nix build --inputs-from . nixpkgs#curl --no-link --json | jq -r ".[0].outputs.bin")/bin/curl -o out/curl-pcode
+ctadl import pcode $(nix build --inputs-from "$top" nixpkgs#curl --no-link --json | jq -r ".[0].outputs.bin")/bin/curl -o out/curl-pcode -f
 
 # Test some options
 for index_opt in --match-star '--cha --no-hybrid-inlining' --star; do

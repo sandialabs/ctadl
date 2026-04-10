@@ -74,7 +74,7 @@
           ];
           inherit system;
         };
-        python3 = pkgs.python39;
+        python3 = pkgs.python3;
 
         # Need a newer nixpkgs for a few things
         bleeding = import nixpkgs-bleeding {inherit system;};
@@ -89,7 +89,7 @@
           .callPackage
           ./nix/sarif-multitool/checksarif.nix {
           };
-        llvmPackages = pkgs.llvmPackages_10;
+        llvmPackages = pkgs.llvmPackages;
         soufflePackages = pkgs.callPackage ./nix/souffle/packages.nix {};
         ctadlPackages = let
           scope = pkgs.lib.fixedPoints.extends ctadlOverlay (self: {
