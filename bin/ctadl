@@ -42,7 +42,16 @@ import ctadl
 import ctadl.util.diff
 import ctadl.vis
 import ctadl.vis.formatters
-from ctadl import DatalogSource, advise, analysisdir, error, status, status_isatty, warn
+from ctadl import (
+    DatalogSource,
+    advise,
+    analysiscachedir,
+    analysisdir,
+    error,
+    status,
+    status_isatty,
+    warn,
+)
 from ctadl.models import JSONTranslator
 from ctadl.util.functions import pluralize, writer
 from ctadl.vis import model
@@ -347,7 +356,7 @@ class AnySouffleCommand(Command):
         self._includes = ["-I", str(resources.files(ctadl) / "souffle-logic")]
 
     def config_libdir(self):
-        for d in [analysisdir]:
+        for d in [analysisdir, analysiscachedir]:
             self.add_args(["-L", str(d)])
 
     def config_macros(self, args):
@@ -807,13 +816,13 @@ def get_souffle_path() -> str:
     return souffle_path
 
 
-def get_file_hash(src: Union[str, Path]) -> Path:
+def get_file_hash(src: Union[str, Path], analysis_path: Path = analysisdir) -> Path:
     algo = hashlib.sha256()
     with open(str(src), "rb") as file:
         for byte_block in iter(lambda: file.read(4096), b""):
             algo.update(byte_block)
     filename = algo.hexdigest()
-    bin = analysisdir / filename
+    bin = analysis_path / filename
 
     logging.debug("checking for compiled artifact at '%s'", bin)
     return bin
@@ -829,9 +838,17 @@ def compile_functors(args):
     functors_cpp = ctx_stack.enter_context(
         resources.as_file(resources.files(ctadl) / "souffle-logic" / "functors.cpp")
     )
-    libfunctors_so = analysisdir / ("libfunctors" + so_ext)
+    os.makedirs(str(analysiscachedir), exist_ok=True)
+    packaged_libfunctors_so = analysisdir / ("libfunctors" + so_ext)
+    libfunctors_so = analysiscachedir / ("libfunctors" + so_ext)
 
-    bin = get_file_hash(functors_cpp)
+    if libfunctors_so.exists():
+        return
+    if packaged_libfunctors_so.exists():
+        shutil.copyfile(packaged_libfunctors_so, libfunctors_so)
+        return
+
+    bin = get_file_hash(functors_cpp, analysiscachedir)
     if bin.exists():
         if not libfunctors_so.exists():
             shutil.copyfile(bin, libfunctors_so)
@@ -906,10 +923,15 @@ def build_analysis(
 
     If the user requests interpreted souffle, just returns that"""
 
-    os.makedirs(str(analysisdir), exist_ok=True)
+    os.makedirs(str(analysiscachedir), exist_ok=True)
     compile_functors(args)
 
-    bin = get_file_hash(src)
+    packaged_bin = get_file_hash(src, analysisdir)
+    if packaged_bin.exists():
+        logging.debug("using packaged analysis at '%s'", packaged_bin)
+        return SouffleCompiledAnalysis(str(packaged_bin))
+
+    bin = get_file_hash(src, analysiscachedir)
 
     logging.debug("checking for compiled analysis at '%s'", bin)
     if not bin.exists():

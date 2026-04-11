@@ -23,6 +23,7 @@
       dontUnpack = true;
       dontBuild = true;
       dontConfigure = true;
+      nativeBuildInputs = [makeWrapper];
 
       propagatedBuildInputs =
         plugins
@@ -39,6 +40,7 @@
         )
 
         mkdir -p $out
+        mkdir -p $out/bin
         for file in ctadl; do
           makeWrapper "${ctadl}/bin/$file" "$out/bin/$file" \
             ''${makeWrapperArgs[@]}
