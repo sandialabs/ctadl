@@ -156,7 +156,8 @@ enum PredicateFile {
 	HVAR_REPRESENTATIVE("HVAR_REPRESENTATIVE"), PCODE_TOSTR("PCODE_TOSTR"), PCODE_MNEMONIC("PCODE_MNEMONIC"),
 	PCODE_OPCODE("PCODE_OPCODE"), PCODE_PARENT("PCODE_PARENT"), PCODE_TARGET("PCODE_TARGET"),
 	PCODE_INPUT_COUNT("PCODE_INPUT_COUNT"), PCODE_INPUT("PCODE_INPUT"), PCODE_OUTPUT("PCODE_OUTPUT"),
-	PCODE_NEXT("PCODE_NEXT"), PCODE_TIME("PCODE_TIME"), PCODE_INDEX("PCODE_INDEX"), VNODE_ADDRESS("VNODE_ADDRESS"),
+	PCODE_NEXT("PCODE_NEXT"), PCODE_TIME("PCODE_TIME"), PCODE_INDEX("PCODE_INDEX"),
+	BB_PCODE_INDEX("BB_PCODE_INDEX"), VNODE_ADDRESS("VNODE_ADDRESS"),
 	VNODE_IS_ADDRESS("VNODE_IS_ADDRESS"), VNODE_IS_ADDRTIED("VNODE_IS_ADDRTIED"), VNODE_PC_ADDRESS("VNODE_PC_ADDRESS"),
 	VNODE_DESC("VNODE_DESC"), VNODE_OFFSET("VNODE_OFFSET"), VNODE_OFFSET_N("VNODE_OFFSET_N"), VNODE_SIZE("VNODE_SIZE"),
 	VNODE_NAME("VNODE_NAME"), VNODE_SPACE("VNODE_SPACE"), VNODE_TOSTR("VNODE_TOSTR"), VNODE_HVAR("VNODE_HVAR"),
@@ -431,12 +432,14 @@ class HighFunctionExporter {
 			}
 			bbset.add(bb.getIndex());
 			debug("Starting basic block " + bb.getIndex());
+			int bbIndex = 0;
 			Iterator<PcodeOp> opiter = bb.getIterator(); // high.getPcodeOps();
 			while (opiter.hasNext()) {
 				PcodeOp op = opiter.next();
 				if (op != null) {
 					set.add(op);
 					exportPcode(high, index++, op);
+					exportN(PredicateFile.BB_PCODE_INDEX, bbID(high, bb), bbIndex++, pcodeID(high, op));
 				}
 			}
 			debug("End basic block " + bb.getIndex());
