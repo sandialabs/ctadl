@@ -59,6 +59,7 @@ statedir = (
 )
 
 analysisdir = datadir / "analysis" / __version__
+analysiscachedir = statedir / "analysis" / __version__
 
 
 def is_verbosity_enabled_for(verb: int):

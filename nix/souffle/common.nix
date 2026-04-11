@@ -6,7 +6,7 @@
 , llvmPackages
 , src
 , version
-, macosx-version-min ? "10.14"
+, macosx-version-min ? "10.15"
 , enableOpenMP
 , enable64BitDomain
 , enableDebug

@@ -905,12 +905,11 @@ class JSONTranslator:
 
         status(f"importing models in '{filename}'", verb=1)
         with open(filename, "rb") as fp:
-            parser = json
             contents = fp.read()
             if str(filename).endswith(".json5"):
-                parser = json5
-                contents = contents.decode()
-            models = parser.loads(contents)
+                models = json5.loads(contents.decode())
+            else:
+                models = json.loads(contents)
         if not isinstance(models, dict):
             return
         if validate:

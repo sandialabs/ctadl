@@ -42,9 +42,9 @@ STYLE_INT_ID = "light_slate_blue"
 
 _TERMINAL_WIDTH = getenv("TERMINAL_WIDTH")
 MAX_WIDTH = int(_TERMINAL_WIDTH) if _TERMINAL_WIDTH else None
-COLOR_SYSTEM: Optional[
-    Literal["auto", "standard", "256", "truecolor", "windows"]
-] = "truecolor"  # Set to None to disable colors
+COLOR_SYSTEM: Optional[Literal["auto", "standard", "256", "truecolor", "windows"]] = (
+    "truecolor"  # Set to None to disable colors
+)
 FORCE_TERMINAL = (
     True
     if getenv("GITHUB_ACTIONS") or getenv("FORCE_COLOR") or getenv("PY_COLORS")

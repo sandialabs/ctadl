@@ -286,9 +286,9 @@ class TaintInfo:
         default_factory=lambda: defaultdict(OrderedSet)
     )
     # All logical locations for each instruction and variable
-    logical_locations_by_obj: dict[
-        Union[InsnIdStr, VarIdStr], LogicalLocation
-    ] = dataclasses.field(default_factory=Dict)
+    logical_locations_by_obj: dict[Union[InsnIdStr, VarIdStr], LogicalLocation] = (
+        dataclasses.field(default_factory=Dict)
+    )
     # Logical locations in final array order for layout in the SARIF. It is
     # safe to index other locations (for example, with a parentIndex) into this
     # array.
@@ -296,9 +296,9 @@ class TaintInfo:
         default_factory=list
     )
     # Maps object to index into logical_locations_array
-    logical_location_index_by_obj: dict[
-        Union[InsnIdStr, VarIdStr, FuncIdStr], int
-    ] = dataclasses.field(default_factory=Dict)
+    logical_location_index_by_obj: dict[Union[InsnIdStr, VarIdStr, FuncIdStr], int] = (
+        dataclasses.field(default_factory=Dict)
+    )
     # All physical locations for each instruction and variable
     physical_locations_by_obj: dict[
         Union[InsnIdStr, VarIdStr], list[PhysicalLocation]
