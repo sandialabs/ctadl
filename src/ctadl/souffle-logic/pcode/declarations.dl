@@ -35,6 +35,7 @@
 .decl PCODE_NEXT(prev: PCodeInstruction, next: PCodeInstruction)
 .decl PCODE_TIME(id: PCodeInstruction, time: number)
 .decl PCODE_INDEX(id: PCodeInstruction, index: number)
+.decl BB_PCODE_INDEX(bbid: PCodeBlockBasic, i: number, pcode: PCodeInstruction)
 
 .decl VNODE_ADDRESS(id: PCodeVarnode, address: PCodeAddress)
 .decl VNODE_IS_ADDRESS(id: PCodeVarnode)
