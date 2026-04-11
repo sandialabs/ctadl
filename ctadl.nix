@@ -16,14 +16,13 @@
   ...
 }: let
   withPlugins = plugins:
-    python3.pkgs.buildPythonPackage {
+    stdenv.mkDerivation {
       pname = "${ctadl.pname}-with-plugins";
       inherit (ctadl) version;
-      format = "other";
 
       dontUnpack = true;
       dontBuild = true;
-      doCheck = false;
+      dontConfigure = true;
 
       propagatedBuildInputs =
         plugins
