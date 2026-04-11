@@ -233,7 +233,7 @@
             pydev
             soufflePackages.souffle
             pkgs.gdb
-            bleeding.nodePackages.pyright
+            bleeding.pyright
             bleeding.sqlite-interactive
             llvmPackages.llvm
             pkgs.ctags
