@@ -617,7 +617,7 @@ def get_formatter(
     name: Literal[
         "summary", "sarif", "sarif+instructions", "sarif+graphs", "sarif+all"
     ],
-    strategy: Literal["front", "back", "both"],
+    strategy: Literal["front", "back", "both", "none"],
 ):
     if name.startswith("sarif"):
         # "sarif" config
@@ -650,7 +650,7 @@ def visualize_query_results(
     format: Literal[
         "summary", "sarif", "sarif+instructions", "sarif+graphs", "sarif+all"
     ],
-    strategy: Literal["front", "back", "both"],
+    strategy: Literal["front", "back", "both", "none"],
     output: Optional[str],
 ):
     status(f"reading results from '{Path(input_index).resolve()}'", verb=1)
@@ -1853,14 +1853,15 @@ Formats:
     parser.add_argument(
         "--path-avoid-strategy",
         default="front",
-        choices=["front", "back", "both"],
+        choices=["front", "back", "both", "none"],
         type=str.lower,
         help="""Path avoidance strategy (default: %(default)s)
 
 Strategies:
 - front: avoid paths with same start
 - back: avoid paths with same end
-- both: avoid paths with same start, then with same end""",
+- both: avoid paths with same start, then with same end
+- none: generate all paths, avoiding cycles. This may generate a LOT of paths.""",
     )
     parser_add_argument_wrapper(
         parser,

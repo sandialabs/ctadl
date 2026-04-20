@@ -27,7 +27,9 @@ logger = logging.getLogger(__name__)
 
 
 def find_paths(
-    conn: sqlite3.Connection, vertices: Collection[VertexTy]
+    conn: sqlite3.Connection,
+    vertices: Collection[VertexTy],
+    strategy: PathAvoidStrategy = PathAvoidStrategy.Both,
 ) -> Iterator[Path]:
     """
     Finds paths in the taint graph that connect to the given vertices.
@@ -91,9 +93,7 @@ def find_paths(
             starts = sources if dir.is_forward() else vertices_ids
             goals = sinks if not dir.is_forward() else vertices_ids
             for i in starts:
-                for path in t.startpaths(
-                    start=i, goals=goals, strategy=PathAvoidStrategy.Both
-                ):
+                for path in t.startpaths(start=i, goals=goals, strategy=strategy):
                     # Projects the path back onto its vertices
                     logger.debug("%s path: %s", dir, path)
                     # We inline the order of the vertex ids in the path using
