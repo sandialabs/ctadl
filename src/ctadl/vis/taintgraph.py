@@ -38,6 +38,7 @@ class PathAvoidStrategy(Enum):
     Front = 1
     Back = 2
     Both = 3
+    NONE = 4
 
 
 class TaintGraph(AdjacencyGraph1[VertexId]):
@@ -80,6 +81,26 @@ class TaintGraph(AdjacencyGraph1[VertexId]):
         or either. The either option starts independent searches, one that
         avoids the second node and another that avoids the second-to-last.
         """
+
+        if strategy == PathAvoidStrategy.NONE:
+            # Simple DFS to find all paths, avoiding cycles
+            paths = []
+            goals_set = set(goals)
+            # stack stores (current_node, current_path, visited_on_this_path)
+            stack = [(start, [start], {start})]
+            while stack:
+                u, path, visited = stack.pop()
+                if u in goals_set:
+                    paths.append(path)
+                    # We usually stop at a goal node for a path.
+                    continue
+
+                for v in self.successors(u):
+                    if v not in visited:
+                        new_visited = visited.copy()
+                        new_visited.add(v)
+                        stack.append((v, path + [v], new_visited))
+            return paths
 
         paths = []
         # Maintains a list of searches and works on them till they're exhausted
@@ -150,6 +171,8 @@ class TaintGraph(AdjacencyGraph1[VertexId]):
             strat_enum = PathAvoidStrategy.Both
         elif strategy == "front":
             strat_enum = PathAvoidStrategy.Front
+        elif strategy == "none":
+            strat_enum = PathAvoidStrategy.NONE
         else:
             strat_enum = PathAvoidStrategy.Back
         for start in self.sources:
