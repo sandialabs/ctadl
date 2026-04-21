@@ -1061,7 +1061,7 @@ class HighFunctionExporter {
 
 	private String bbID(HighFunction hfn, PcodeBlock bb) {
 		if (bb.getStart() != null) {
-			return hfuncID(hfn) + SEP + bb.hashCode();
+			return hfuncID(hfn) + SEP + "block" + SEP + bb.getStart();
 		}
 		return hfuncID(hfn) + SEP + "unknown block";
 	}
