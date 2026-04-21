@@ -94,6 +94,9 @@ import ghidra.program.model.symbol.Symbol;
 import ghidra.program.model.symbol.SymbolIterator;
 import ghidra.program.model.symbol.SymbolTable;
 import ghidra.program.model.symbol.ThunkReference;
+import ghidra.program.model.lang.Register;
+import ghidra.program.model.lang.Language;
+import ghidra.program.model.lang.CompilerSpec;
 import ghidra.util.task.TaskMonitor;
 
 class PcodeBlockBasicVertex implements GVertex {
@@ -161,7 +164,7 @@ enum PredicateFile {
 	VNODE_IS_ADDRESS("VNODE_IS_ADDRESS"), VNODE_IS_ADDRTIED("VNODE_IS_ADDRTIED"), VNODE_PC_ADDRESS("VNODE_PC_ADDRESS"),
 	VNODE_DESC("VNODE_DESC"), VNODE_OFFSET("VNODE_OFFSET"), VNODE_OFFSET_N("VNODE_OFFSET_N"), VNODE_SIZE("VNODE_SIZE"),
 	VNODE_NAME("VNODE_NAME"), VNODE_SPACE("VNODE_SPACE"), VNODE_TOSTR("VNODE_TOSTR"), VNODE_HVAR("VNODE_HVAR"),
-	VNODE_DEF("VNODE_DEF"), VNODE_HFUNC("VNODE_HFUNC"), TYPE_NAME("TYPE_NAME"), TYPE_LENGTH("TYPE_LENGTH"),
+	VNODE_DEF("VNODE_DEF"), VNODE_HFUNC("VNODE_HFUNC"), REGISTER_OFF_NAME("REGISTER_OFF_NAME"), REGISTER_IS_SP("REGISTER_IS_SP"), TYPE_NAME("TYPE_NAME"), TYPE_LENGTH("TYPE_LENGTH"),
 	TYPE_POINTER("TYPE_POINTER"), TYPE_POINTER_BASE("TYPE_POINTER_BASE"), TYPE_ARRAY("TYPE_ARRAY"),
 	TYPE_ARRAY_BASE("TYPE_ARRAY_BASE"), TYPE_ARRAY_N("TYPE_ARRAY_N"),
 	TYPE_ARRAY_ELEMENT_LENGTH("TYPE_ARRAY_ELEMENT_LENGTH"), TYPE_STRUCT("TYPE_STRUCT"),
@@ -883,6 +886,22 @@ class HighFunctionExporter {
 		}
 	}
 
+	public void exportRegisterInfo(Program program) {
+		Language language = program.getLanguage();
+		CompilerSpec cSpec = program.getCompilerSpec();
+		Register sp = cSpec.getStackPointer();
+
+		for (Register reg : language.getRegisters()) {
+			if (reg.getAddress().isRegisterAddress()) {
+				export(PredicateFile.REGISTER_OFF_NAME, Long.toString(reg.getAddress().getOffset()),
+						Integer.toString(reg.getMinimumByteSize()), reg.getName());
+				if (sp != null && (sp.equals(reg) || sp.contains(reg))) {
+					export(PredicateFile.REGISTER_IS_SP, reg.getName());
+				}
+			}
+		}
+	}
+
 	public void exportDefinedData(Program p) {
 		DataIterator dataIter = p.getListing().getDefinedData(p.getMinAddress(), true);
 		for (Data d : dataIter) {
@@ -1181,6 +1200,7 @@ public class ExportPCodeForCTADL extends GhidraScript {
 
 		// dump defined data once
 		ex.exportDefinedData(currentProgram);
+		ex.exportRegisterInfo(currentProgram);
 		ex.writeFacts(true);
 
 		ParallelDecompiler.decompileFunctions(callback, toProcessList, monitor);
