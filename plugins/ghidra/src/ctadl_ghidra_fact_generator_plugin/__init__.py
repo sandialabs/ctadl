@@ -87,7 +87,7 @@ def run(ctadl, args, artifact: str, out: str, **kwargs):
             [project_path],
             [project],
             ["-import", artifact, "-deleteProject"],
-            ["-postScript", "ExportPCodeForCTADL.java", factsdir],
+            ["-postScript", "ExportPcode.java", factsdir],
             [
                 "-scriptPath",
                 str(ctx.enter_context(resources.as_file(pcode_files)).resolve()),
