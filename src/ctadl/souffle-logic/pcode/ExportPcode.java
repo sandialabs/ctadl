@@ -1128,7 +1128,7 @@ class HighFunctionExporter {
 //	}
 //}
 
-public class ExportPCodeForCTADL extends GhidraScript {
+public class ExportPcode extends GhidraScript {
 
 	File outputDirectory;
 	boolean DEBUG = false;
