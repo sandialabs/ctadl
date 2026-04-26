@@ -56,6 +56,11 @@ You can install CTADL with pip:
 
    python3 -mpip install ctadl ctadl-jadx-fact-generator-plugin ctadl-ghidra-fact-generator-plugin ctadl-taint-front-fact-generator-plugin
 
+For Ghidra PCODE imports, install ``ctadl-ghidra-fact-generator-plugin>=0.1.0``.
+That plugin uses the Ghidra installation on your machine rather than a
+packaged launcher script, so either set ``GHIDRA_HOME`` or make ``ghidra``
+available on ``PATH`` before running ``ctadl import ... pcode ...``.
+
 We recommend some optional libraries:
 
 .. code:: sh
@@ -82,6 +87,7 @@ Plugins implement import and export:
    and `source
    repository <https://github.com/sandialabs/ctadl-jadx-fact-generator/releases>`__.
 -  `ctadl-ghidra-fact-generator-plugin <https://pypi.org/project/ctadl-ghidra-fact-generator-plugin/>`__
+   Requires version 0.1.0 or newer when installed from pip.
 -  `ctadl-taint-front-fact-generator-plugin <https://pypi.org/project/ctadl-taint-front-fact-generator-plugin/>`__.
 -  `ctadl-networkx-export-plugin <https://pypi.org/project/ctadl-networkx-export-plugin/>`__
 
