@@ -34,12 +34,11 @@ jq --null-input \
          "$releases_url"
 
 # Uploads python packages to package registry
-for pkg in "ctadl" "ctadl-plugins.taintfront" "ctadl-plugins.jadx" "ctadl-plugins.ghidra" "ctadl-plugins.networkxExport"; do
-  TWINE_USERNAME=gitlab-ci-token TWINE_PASSWORD="${CI_JOB_TOKEN}" twine upload \
-    --verbose --repository-url "${CI_API_V4_URL}"/projects/"${CI_PROJECT_ID}"/packages/pypi \
-    --skip-existing \
-    "$(nix build -L .#ctadlPackages."${pkg}"^whl --no-link --print-out-paths)"/*.whl
-done
+TWINE_USERNAME=gitlab-ci-token \
+TWINE_PASSWORD="${CI_JOB_TOKEN}" \
+TWINE_REPOSITORY_URL="${CI_API_V4_URL}"/projects/"${CI_PROJECT_ID}"/packages/pypi \
+  nix run .#publish-pypi -- --skip-existing
+
 
 
 #gzip -d --stdout --force < "$(nix build -L --print-out-paths --no-link .#singularity)" > image.tar

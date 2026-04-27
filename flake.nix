@@ -45,21 +45,26 @@
       indexers-bin = final.callPackage ./indexers.nix {};
 
       # This needs to be in the overlay so other packages can call it properly.
-      withPythonWheel = final: prev: {
-        # We make a wheel output so that we can upload wheels to our gitlab
-        # package registry, which makes it possible to pip install this package!
-        # Note: it *cannot* be named "wheel" so we choose "whl". Apparently
-        # building a python package can override that env var during
-        # postInstall, making it point to the .whl file itself instead of the
-        # nix dir to put the wheel in. Crazy stuff. The effect is that nix
-        # expects an output named "wheel" but our postinstall script doesn't
-        # work. Somehow this happens when this overlay is called from another
-        # package but not when it's used in this package.
-        outputs = prev.outputs ++ [ "whl" ];
+      withPythonDist = final: prev: {
+        # Preserve Python release artifacts as explicit outputs so release
+        # tooling can upload them straight from the Nix store.
+        # Note: these outputs cannot be named "wheel", because Python builds
+        # may overwrite that variable during postInstall and break the output.
+        outputs =
+          builtins.foldl'
+          (acc: output: if builtins.elem output acc then acc else acc ++ [output])
+          []
+          ((prev.outputs or ["out"]) ++ [ "whl" "sdist" ]);
+        postBuild = prev.postBuild or ""
+        + ''
+          python setup.py sdist --dist-dir dist
+        '';
         postInstall = prev.postInstall or ""
         + ''
-          mkdir $whl
+          mkdir -p $whl
           cp dist/*.whl $whl/
+          mkdir -p $sdist
+          cp dist/*.tar.gz $sdist/
         '';
       };
     };
@@ -186,6 +191,55 @@
           runtimeInputs = with pkgs; [crane jq curl];
           text = builtins.readFile ./.release_scripts/make_images;
         };
+        # Example:
+        #
+        #  TWINE_REPOSITORY=pypi \
+        #  TWINE_USERNAME=__token__ \
+        #  TWINE_PASSWORD="$PYPI_TOKEN" \
+        #  nix run .#publish-pypi
+        publish-pypi-script = pkgs.writeShellApplication {
+          name = "publish-pypi";
+          runtimeInputs = with pkgs; [bash jq nix twine];
+          text = ''
+            set -euo pipefail
+
+            packages=(
+              "ctadl"
+              "ctadl-plugins.taintfront"
+              "ctadl-plugins.jadx"
+              "ctadl-plugins.ghidra"
+              "ctadl-plugins.networkxExport"
+            )
+
+            twine_args=("$@")
+            repository_args=()
+
+            if [[ -n "''${TWINE_REPOSITORY:-}" ]]; then
+              repository_args+=(--repository "''${TWINE_REPOSITORY}")
+            fi
+
+            if [[ -n "''${TWINE_REPOSITORY_URL:-}" ]]; then
+              repository_args+=(--repository-url "''${TWINE_REPOSITORY_URL}")
+            fi
+
+            for pkg in "''${packages[@]}"; do
+              whl_path="$(nix build -L ".#ctadlPackages.''${pkg}^whl" --no-link --print-out-paths)"
+              sdist_path="$(nix build -L ".#ctadlPackages.''${pkg}^sdist" --no-link --print-out-paths)"
+
+              artifacts=(
+                "''${whl_path}"/*.whl
+                "''${sdist_path}"/*.tar.gz
+              )
+
+              twine upload \
+                --verbose \
+                --skip-existing \
+                "''${repository_args[@]}" \
+                "''${twine_args[@]}" \
+                "''${artifacts[@]}"
+            done
+          '';
+        };
       in {
         # remember nix run --system x86_64-darwin .#souffle23
         packages =
@@ -208,6 +262,10 @@
         apps.release = {
           type = "app";
           program = "${release-script}/bin/make_images";
+        };
+        apps.publish-pypi = {
+          type = "app";
+          program = "${publish-pypi-script}/bin/publish-pypi";
         };
         defaultPackage = ctadlPackages.ctadl;
         formatter = pkgs.alejandra;

@@ -7,7 +7,7 @@
   souffle,
   mcpp,
   makeWrapper,
-  withPythonWheel,
+  withPythonDist,
   llvmPackages,
   jdk ? null,
   enableRich ? true,
@@ -109,4 +109,4 @@
     meta.mainProgram = "ctadl";
   };
 in
-  pkg.overrideAttrs withPythonWheel
+  pkg.overrideAttrs withPythonDist

@@ -4,7 +4,7 @@
   llvmPackages,
   jadxPlugin,
   ghidra,
-  withPythonWheel,
+  withPythonDist,
 }: let
   plugins = {
     taintfront = callPackage ./nix/taintfront/taintfront-plugin.nix {};
@@ -12,7 +12,7 @@
     networkxExport = callPackage ./nix/export/networkx.nix {};
   };
 in
-  {jadx = jadxPlugin;}
+  {jadx = jadxPlugin.overrideAttrs withPythonDist;}
   // (
-    lib.attrsets.mapAttrs (name: pkg: pkg.overrideAttrs withPythonWheel) plugins
+    lib.attrsets.mapAttrs (name: pkg: pkg.overrideAttrs withPythonDist) plugins
   )
