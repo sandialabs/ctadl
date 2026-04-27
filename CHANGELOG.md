@@ -1,3 +1,7 @@
+# 0.14.1
+
+- Exit before plugin run if artifact is not found.
+
 # 0.14.0
 
 - Raised the minimum `ctadl-ghidra-fact-generator-plugin` version to `0.1.0`
