@@ -8,7 +8,15 @@
     nixpkgs-bleeding = {
       url = "github:NixOS/nixpkgs?ref=nixos-unstable";
     };
-    jadx-plugin.url = "github:sandialabs/ctadl-jadx-fact-generator";
+    jadx-nixpkgs.url = "github:NixOS/nixpkgs/61a8a98e6d557e6dd7ed0cdb54c3a3e3bbc5e25c";
+    jadx = {
+      url = "github:dbueno/jadx/source-maps";
+      inputs.nixpkgs.follows = "jadx-nixpkgs";
+    };
+    jadx-plugin = {
+      url = "github:sandialabs/ctadl-jadx-fact-generator";
+      inputs.jadx.follows = "jadx";
+    };
   };
 
   outputs = {

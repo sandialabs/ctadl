@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+
+env:
+  NIX_CONFIG: experimental-features = nix-command flakes
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Nix
+        uses: DeterminateSystems/determinate-nix-action@v3
+      - name: Materialize flake inputs
+        run: nix flake archive --no-write-lock-file .
+      - name: Run test suite
+        run: nix run .#test
+
+  publish:
+    name: Publish
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Nix
+        uses: DeterminateSystems/determinate-nix-action@v3
+      - name: Materialize flake inputs
+        run: nix flake archive --no-write-lock-file .
+
+      - name: Publish packages to PyPI
+        env:
+          TWINE_REPOSITORY: pypi
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+        run: nix run .#publish-pypi
+
+      - name: Sync Read the Docs versions
+        if: env.READTHEDOCS_PROJECT != '' && env.READTHEDOCS_TOKEN != ''
+        env:
+          READTHEDOCS_PROJECT: ${{ secrets.READTHEDOCS_PROJECT }}
+          READTHEDOCS_TOKEN: ${{ secrets.READTHEDOCS_TOKEN }}
+        run: |
+          curl --fail --silent --show-error \
+            -X POST \
+            -H "Authorization: Token ${READTHEDOCS_TOKEN}" \
+            "https://app.readthedocs.org/api/v3/projects/${READTHEDOCS_PROJECT}/sync-versions/"
+
+      - name: Trigger Read the Docs latest build
+        if: env.READTHEDOCS_PROJECT != '' && env.READTHEDOCS_TOKEN != ''
+        env:
+          READTHEDOCS_PROJECT: ${{ secrets.READTHEDOCS_PROJECT }}
+          READTHEDOCS_TOKEN: ${{ secrets.READTHEDOCS_TOKEN }}
+        run: |
+          curl --fail --silent --show-error \
+            -X POST \
+            -H "Authorization: Token ${READTHEDOCS_TOKEN}" \
+            "https://app.readthedocs.org/api/v3/projects/${READTHEDOCS_PROJECT}/versions/latest/builds/"
+
+      - name: Trigger Read the Docs release build
+        if: github.event_name == 'release' && env.READTHEDOCS_PROJECT != '' && env.READTHEDOCS_TOKEN != ''
+        env:
+          READTHEDOCS_PROJECT: ${{ secrets.READTHEDOCS_PROJECT }}
+          READTHEDOCS_TOKEN: ${{ secrets.READTHEDOCS_TOKEN }}
+        run: |
+          curl --fail --silent --show-error \
+            -X POST \
+            -H "Authorization: Token ${READTHEDOCS_TOKEN}" \
+            "https://app.readthedocs.org/api/v3/projects/${READTHEDOCS_PROJECT}/versions/${GITHUB_REF_NAME}/builds/"
