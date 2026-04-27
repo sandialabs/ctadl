@@ -1131,6 +1131,7 @@ def handle_import(args):
             artifact = Path(args.artifact)
             if not artifact.exists():
                 error(f"artifact file doesn't exist: '{artifact}'")
+                exit(1)
             pluginret = plugin.run(
                 ctadl,
                 args,
