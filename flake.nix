@@ -267,7 +267,7 @@
           type = "app";
           program = "${publish-pypi-script}/bin/publish-pypi";
         };
-        defaultPackage = ctadlPackages.ctadl;
+        defaultPackage = ctadlPackages.ctadl-full;
         formatter = pkgs.alejandra;
         devShells.default = pkgs.mkShell {
           inputsFrom = [ctadlPackages.ctadl-full];
