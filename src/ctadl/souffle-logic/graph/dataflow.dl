@@ -26,7 +26,9 @@ VirtualAssign(stmt, v1, p1, v2, p2, "move", "") :-
 // below creates stupid code
 Vertex(v, p) :-
     VirtualAssign(_, v, p, _, _, _, _);
-    VirtualAssign(_, _, _, v, p, _, _).
+    VirtualAssign(_, _, _, v, p, _, _);
+    LocallyReachable(v, p, _, _, _);
+    LocallyReachable(_, _, v, p, _).
 
 CallEdge(insn, callee, "") :- CInsn_UnsuspiciousCall(insn, callee).
 CallEdge(insn, callee, "") :- CInsn_Call(insn, callee).
@@ -51,17 +53,16 @@ LocallyReachableSources(v, p) :-
 LocallyReachable_Root(v, p) :-
     Vertex(v, p), CFunction_FormalParam(_, _, v).
 
-// Local reachability follows virtual assignments.
+// Local reachability follows virtual assignments and internal field-propagation
+// edges.
 #define LocallyReachable_CtxEdge(v1, p1, v2, p2, ctx) \
     VirtualAssign(_, v1, p1, v2, p2, _, ctx), \
     !CVar_isGlobal(v1), \
     !CVar_isGlobal(v2), \
     CVar_InFunction(v1, m), CVar_InFunction(v2, m)
 
-LocallyReachable(v1, p1, v2, p2, ctx) :-
-    LocallyReachable_Root(v2, p2),
-    LocallyReachable_CtxEdge(v1, p1, v2, p2, ctx).
-.plan 1: (2, 1, 3, 4)
+LocallyReachable(v1, p1, v1, p1, "") :-
+    LocallyReachable_Root(v1, p1).
 
 // If an edge has a ctx2 that is "inside" a reachability fact ctx1, then the
 // extended reachability is in ctx1.
@@ -191,15 +192,96 @@ isComputedAccessPath(dGdH) :-
     n <= k,
     !CVar_isGlobal(x),
     !CVar_isGlobal(y).
-.plan 1: (2, 1, 3, 4), 2: (3, 2, 1, 4)
 
 // -----------------------------------------------------------------------
 // field propagation
 
 #ifndef CTADL_DISABLE_FIELD_PROPAGATION
 
-// reference, simple impl is in ./graph/fieldprop_ref.dl
-#include "graph/fieldprop.dl"
+// Field propagation is computed in LocallyReachable above. Do not derive
+// additional VirtualAssign edges here: summaries should come from local
+// reachability, not graph-wide recursive field propagation.
+//
+// These cases mirror graph/fieldprop.dl, with the head changed to the private
+// LocallyReachable relation.
+
+// Forward
+
+LocallyReachable(v1, p13, a, p4, ctx) :- //B
+    VirtualAssign(_, v1, p1, v2, p2, _, ctx),
+    LocallyReachable(v2, p23, a, p4, ctx),
+    MatchComputedPrefix(p23, p2, p3),
+    MatchComputedPrefix(p13, p1, p3),
+    !CVar_isGlobal(v1),
+    !CVar_isGlobal(v2),
+    (v1 != v2; p13 != p23).
+//LocallyReachable(v1, p13, a, p4, ctx) :- //D
+//    VirtualAssign(_, v1, p1, v2, p2, _, ctx),
+//    LocallyReachable(v2, p23, a, p4, ctx),
+//    p1 = "",
+//    p2 != "",
+//    ComputedAccessPathNonEmptySplit(p23, p2, p3),
+//    p13 = p3,
+//    isComputedAccessPath(p13),
+//    !CVar_isGlobal(v1),
+//    !CVar_isGlobal(v2),
+//    (v1 != v2; p13 != p23).
+//LocallyReachable(v1, p13, a, p4, ctx) :- //F
+//    VirtualAssign(_, v1, p1, v2, p2, _, ctx),
+//    LocallyReachable(v2, p23, a, p4, ctx),
+//    p1 != "",
+//    p2 = "",
+//    p23 = p3,
+//    ComputedAccessPathNonEmptySplit(p13, p1, p3),
+//    !CVar_isGlobal(v1),
+//    !CVar_isGlobal(v2),
+//    (v1 != v2; p13 != p23).
+//LocallyReachable(v1, p13, a, p4, ctx) :- //H
+//    VirtualAssign(_, v1, p1, v2, p2, _, ctx),
+//    LocallyReachable(v2, p23, a, p4, ctx),
+//    ComputedAccessPathNonEmptySplit(p23, p2, p3),
+//    ComputedAccessPathNonEmptySplit(p13, p1, p3),
+//    !CVar_isGlobal(v1),
+//    !CVar_isGlobal(v2),
+//    (v1 != v2; p13 != p23).
+
+// Backward
+
+LocallyReachable(v1, p1, a, p43, ctx) :- //B
+    VirtualAssign(_, v1, p1, v2, p23, _, ctx),
+    LocallyReachable(v2, p2, a, p4, ctx),
+    MatchComputedPrefix(p23, p2, p3),
+    MatchComputedPrefix(p43, p4, p3),
+    !CVar_isGlobal(v1),
+    !CVar_isGlobal(v2),
+    (v1 != v2).
+//LocallyReachable(v1, p1, a, p43, ctx) :- //D
+//    VirtualAssign(_, v1, p1, v2, p23, _, ctx),
+//    LocallyReachable(v2, p2, a, p4, ctx),
+//    p1 = "",
+//    ComputedAccessPathNonEmptySplit(p23, p2, p3),
+//    p43 = p3,
+//    isComputedAccessPath(p43),
+//    !CVar_isGlobal(v1),
+//    !CVar_isGlobal(v2),
+//    (v1 != v2).
+//LocallyReachable(v1, p1, a, p43, ctx) :- //F
+//    VirtualAssign(_, v1, p1, v2, p23, _, ctx),
+//    LocallyReachable(v2, p2, a, p4, ctx),
+//    p2 = "",
+//    p23 = p3,
+//    ComputedAccessPathNonEmptySplit(p43, p4, p3),
+//    !CVar_isGlobal(v1),
+//    !CVar_isGlobal(v2),
+//    (v1 != v2).
+//LocallyReachable(v1, p1, a, p43, ctx) :- //H
+//    VirtualAssign(_, v1, p1, v2, p23, _, ctx),
+//    LocallyReachable(v2, p2, a, p4, ctx),
+//    ComputedAccessPathNonEmptySplit(p23, p2, p3),
+//    ComputedAccessPathNonEmptySplit(p43, p4, p3),
+//    !CVar_isGlobal(v1),
+//    !CVar_isGlobal(v2),
+//    (v1 != v2).
 
 #endif
 
@@ -418,7 +500,7 @@ MatchAPStar() :- CTADLConfig_Input("CTADL_ENABLE_MATCH_ACCESS_PATHS_TO_STAR", 1)
 
 // Finds the last split of an AP such that the prefix.* is an AP
 // .foo.bar.baz -> .foo.bar -> .foo -> ""
-// .foo 
+// .foo
 LastAccessPathNonEmptySplit(ap, prefix, suffix) :-
     CisAccessPath(ap), !contains(STAR, ap),
     i = max j : {
