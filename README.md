@@ -1,3 +1,5 @@
+**The new version of CTADL is developed in [this repo](https://github.com/sandialabs/ctadl-rs)**
+
 # CTADL
 
 [CTADL](https://github.com/sandialabs/ctadl) is a static taint analysis tool.
