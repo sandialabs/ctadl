@@ -9,10 +9,27 @@ outdir="$top/ctadl-test-output"
 cd $outdir
 
 ctadlbench=$outdir/DroidBench
-git clone https://github.com/secure-software-engineering/DroidBench.git $outdir/DroidBench || echo "Clone failed, ignoring"
+droidbench_raw_base=https://raw.githubusercontent.com/secure-software-engineering/DroidBench/master/apk
+droidbench_apks=(
+    InterComponentCommunication/ActivityCommunication4.apk
+)
+
+fetch_apk() {
+    local apk_path=$1
+    local apk_url="$droidbench_raw_base/$apk_path"
+    local apk_dest="$ctadlbench/apk/$apk_path"
+
+    mkdir -p "$(dirname "$apk_dest")"
+    curl --fail --location --show-error --silent "$apk_url" --output "$apk_dest.tmp"
+    mv "$apk_dest.tmp" "$apk_dest"
+}
+
+for apk_path in "${droidbench_apks[@]}"; do
+    fetch_apk "$apk_path"
+done
 
 # Intent test
-ctadl import JADX $ctadlbench/apk/InterComponentCommunication/ActivityCommunication4.apk --out ActivityCommunication4_facts -f
+ctadl import JADX "$ctadlbench/apk/InterComponentCommunication/ActivityCommunication4.apk" --out ActivityCommunication4_facts -f
 ctadl index -f ActivityCommunication4_facts
 ctadl query $top/tests/androidtest-query.json --format=sarif > ActivityCommunication4.sarif
 rm -rf ActivityCommunication4_facts

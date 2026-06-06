@@ -10,7 +10,8 @@ PATH="$SCRIPT_DIR:$PATH"
 
 top="$(git rev-parse --show-toplevel)"
 outdir="$top/ctadl-test-output"
-mkdir -p $outdir
+rm -rf "$outdir"
+mkdir -p "$outdir"
 
 bash $top/tests/bin/check-static
 
