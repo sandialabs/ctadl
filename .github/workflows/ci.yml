@@ -33,6 +33,12 @@ jobs:
     if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
     permissions:
       contents: read
+    # Defined at job level (not per-step) so the step `if:` conditions below can
+    # read them. A step's `if` is evaluated before that step's own `env:` block is
+    # applied, so step-level env is invisible to the step's own condition.
+    env:
+      READTHEDOCS_PROJECT: ${{ secrets.READTHEDOCS_PROJECT }}
+      READTHEDOCS_TOKEN: ${{ secrets.READTHEDOCS_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - name: Install Nix
@@ -49,9 +55,6 @@ jobs:
 
       - name: Sync Read the Docs versions
         if: env.READTHEDOCS_PROJECT != '' && env.READTHEDOCS_TOKEN != ''
-        env:
-          READTHEDOCS_PROJECT: ${{ secrets.READTHEDOCS_PROJECT }}
-          READTHEDOCS_TOKEN: ${{ secrets.READTHEDOCS_TOKEN }}
         run: |
           curl --fail --silent --show-error \
             -X POST \
@@ -60,9 +63,6 @@ jobs:
 
       - name: Trigger Read the Docs latest build
         if: env.READTHEDOCS_PROJECT != '' && env.READTHEDOCS_TOKEN != ''
-        env:
-          READTHEDOCS_PROJECT: ${{ secrets.READTHEDOCS_PROJECT }}
-          READTHEDOCS_TOKEN: ${{ secrets.READTHEDOCS_TOKEN }}
         run: |
           curl --fail --silent --show-error \
             -X POST \
@@ -71,11 +71,21 @@ jobs:
 
       - name: Trigger Read the Docs release build
         if: github.event_name == 'release' && env.READTHEDOCS_PROJECT != '' && env.READTHEDOCS_TOKEN != ''
-        env:
-          READTHEDOCS_PROJECT: ${{ secrets.READTHEDOCS_PROJECT }}
-          READTHEDOCS_TOKEN: ${{ secrets.READTHEDOCS_TOKEN }}
         run: |
+          # sync-versions above is async; the new tag's version may not exist on
+          # RTD yet. Poll for it before triggering its build.
+          api="https://app.readthedocs.org/api/v3/projects/${READTHEDOCS_PROJECT}"
+          for attempt in $(seq 1 12); do
+            status=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+              -H "Authorization: Token ${READTHEDOCS_TOKEN}" \
+              "${api}/versions/${GITHUB_REF_NAME}/")
+            if [ "$status" = "200" ]; then
+              break
+            fi
+            echo "Version ${GITHUB_REF_NAME} not on RTD yet (HTTP ${status}); retrying in 10s..."
+            sleep 10
+          done
           curl --fail --silent --show-error \
             -X POST \
             -H "Authorization: Token ${READTHEDOCS_TOKEN}" \
-            "https://app.readthedocs.org/api/v3/projects/${READTHEDOCS_PROJECT}/versions/${GITHUB_REF_NAME}/builds/"
+            "${api}/versions/${GITHUB_REF_NAME}/builds/"
