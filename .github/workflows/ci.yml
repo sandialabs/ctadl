@@ -46,13 +46,8 @@ jobs:
       - name: Materialize flake inputs
         run: nix flake archive --no-write-lock-file .
 
-      - name: Publish packages to PyPI
-        env:
-          TWINE_REPOSITORY: pypi
-          TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
-        run: nix run .#publish-pypi
-
+      # Read the Docs first, so a duplicate/failed PyPI publish (e.g. a re-run of
+      # an already-released version) doesn't block the docs update.
       - name: Sync Read the Docs versions
         if: env.READTHEDOCS_PROJECT != '' && env.READTHEDOCS_TOKEN != ''
         run: |
@@ -89,3 +84,11 @@ jobs:
             -X POST \
             -H "Authorization: Token ${READTHEDOCS_TOKEN}" \
             "${api}/versions/${GITHUB_REF_NAME}/builds/"
+
+      - name: Publish packages to PyPI
+        if: github.event_name == 'release'
+        env:
+          TWINE_REPOSITORY: pypi
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+        run: nix run .#publish-pypi
